@@ -20,7 +20,6 @@ import (
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	wmtypes "go.mau.fi/whatsmeow/types"
 	wmevents "go.mau.fi/whatsmeow/types/events"
-	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
 type session struct {
@@ -30,6 +29,10 @@ type session struct {
 	phone     string
 	status    domain.SessionStatus
 	updatedAt time.Time
+	lastEvent string
+	lastError string
+	qrCode    string
+	qrCancel  context.CancelFunc
 }
 
 type inboundMediaMeta struct {
@@ -64,7 +67,7 @@ func NewManager(
 	log *logger.Logger,
 ) (*Manager, error) {
 	sqlstore.PostgresArrayWrapper = pq.Array
-	container := sqlstore.NewWithDB(db, "postgres", waLog.Noop)
+	container := sqlstore.NewWithDB(db, "postgres", newWhatsmeowLogger(log, "whatsmeow/store"))
 	if err := container.Upgrade(context.Background()); err != nil {
 		return nil, fmt.Errorf("upgrade whatsmeow store: %w", err)
 	}
@@ -94,20 +97,31 @@ func (m *Manager) Connect(ctx context.Context, tenantID string) (string, error) 
 
 	if sess.client.Store.ID != nil {
 		if err := sess.client.Connect(); err != nil {
+			m.setSessionDiagnostic(ctx, sess, "reconnect_error", err.Error(), "")
 			return "", fmt.Errorf("reconnect session: %w", err)
 		}
-		m.setSessionState(ctx, sess, domain.SessionStatusConnecting, sess.phone)
+		m.setSessionState(ctx, sess, domain.SessionStatusConnecting, sess.phone, "reconnect_requested", "")
 		return "", nil
 	}
 
-	qrCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	if sess.qrCancel != nil {
+		sess.qrCancel()
+		sess.qrCancel = nil
+	}
+	qrCtx, cancel := context.WithCancel(context.Background())
+	sess.qrCancel = cancel
 
 	qrChan, err := sess.client.GetQRChannel(qrCtx)
 	if err != nil {
+		sess.qrCancel = nil
+		cancel()
+		m.setSessionDiagnostic(ctx, sess, "qr_channel_error", err.Error(), "")
 		return "", fmt.Errorf("get qr channel: %w", err)
 	}
 	if err := sess.client.Connect(); err != nil {
+		sess.qrCancel = nil
+		cancel()
+		m.setSessionDiagnostic(ctx, sess, "connect_error", err.Error(), "")
 		return "", fmt.Errorf("connect session: %w", err)
 	}
 
@@ -121,11 +135,15 @@ func (m *Manager) Connect(ctx context.Context, tenantID string) (string, error) 
 			}
 			switch item.Event {
 			case whatsmeow.QRChannelEventCode:
-				m.setSessionState(ctx, sess, domain.SessionStatusConnecting, sess.phone)
+				m.setSessionState(ctx, sess, domain.SessionStatusConnecting, sess.phone, "qr_code", item.Code)
 				return item.Code, nil
 			case whatsmeow.QRChannelTimeout.Event:
+				m.setSessionDiagnostic(ctx, sess, "qr_timeout", domain.ErrQRTimeout.Error(), "")
 				return "", domain.ErrQRTimeout
 			case whatsmeow.QRChannelEventError:
+				if item.Error != nil {
+					m.setSessionDiagnostic(ctx, sess, "qr_error", item.Error.Error(), "")
+				}
 				return "", item.Error
 			}
 		}
@@ -139,7 +157,11 @@ func (m *Manager) Disconnect(ctx context.Context, tenantID string) error {
 	}
 
 	sess.client.Disconnect()
-	m.setSessionState(ctx, sess, domain.SessionStatusDisconnected, sess.phone)
+	if sess.qrCancel != nil {
+		sess.qrCancel()
+		sess.qrCancel = nil
+	}
+	m.setSessionState(ctx, sess, domain.SessionStatusDisconnected, sess.phone, "manual_disconnect", "")
 	return nil
 }
 
@@ -147,6 +169,10 @@ func (m *Manager) Logout(ctx context.Context, tenantID string) error {
 	sess, err := m.ensureSession(ctx, tenantID)
 	if err != nil {
 		return err
+	}
+	if sess.qrCancel != nil {
+		sess.qrCancel()
+		sess.qrCancel = nil
 	}
 	if err := sess.client.Logout(ctx); err != nil {
 		return fmt.Errorf("whatsapp logout: %w", err)
@@ -264,6 +290,9 @@ func (m *Manager) GetSession(ctx context.Context, tenantID string) (*domain.Sess
 			Phone:     sess.phone,
 			Status:    sess.status,
 			UpdatedAt: sess.updatedAt,
+			LastEvent: sess.lastEvent,
+			LastError: sess.lastError,
+			QRCode:    sess.qrCode,
 		}, nil
 	}
 	m.mu.RUnlock()
@@ -308,7 +337,7 @@ func (m *Manager) ensureSession(ctx context.Context, tenantID string) (*session,
 		deviceStore = m.container.NewDevice()
 	}
 
-	client := whatsmeow.NewClient(deviceStore, waLog.Noop)
+	client := whatsmeow.NewClient(deviceStore, newWhatsmeowLogger(m.log, "whatsmeow/client"))
 	sess = &session{
 		tenantID:  tenantID,
 		client:    client,
@@ -320,6 +349,9 @@ func (m *Manager) ensureSession(ctx context.Context, tenantID string) (*session,
 		sess.phone = meta.Phone
 		sess.status = meta.Status
 		sess.updatedAt = meta.UpdatedAt
+		sess.lastEvent = meta.LastEvent
+		sess.lastError = meta.LastError
+		sess.qrCode = meta.QRCode
 	}
 
 	client.AddEventHandler(func(evt interface{}) {
@@ -351,7 +383,11 @@ func (m *Manager) handleEvent(tenantID string, evt interface{}) {
 			deviceJID = sess.client.Store.ID.String()
 		}
 		sess.deviceJID = deviceJID
-		m.setSessionState(ctx, sess, domain.SessionStatusConnected, phone)
+		if sess.qrCancel != nil {
+			sess.qrCancel()
+			sess.qrCancel = nil
+		}
+		m.setSessionState(ctx, sess, domain.SessionStatusConnected, phone, "connected", "")
 		m.eventBus.Publish(domain.Event{
 			Type:     domain.EventConnectionUpdate,
 			TenantID: tenantID,
@@ -360,7 +396,11 @@ func (m *Manager) handleEvent(tenantID string, evt interface{}) {
 
 	case *wmevents.Disconnected:
 		if sess, err := m.ensureSession(ctx, tenantID); err == nil {
-			m.setSessionState(ctx, sess, domain.SessionStatusDisconnected, sess.phone)
+			if sess.qrCancel != nil {
+				sess.qrCancel()
+				sess.qrCancel = nil
+			}
+			m.setSessionState(ctx, sess, domain.SessionStatusDisconnected, sess.phone, "disconnected", "")
 		}
 		m.eventBus.Publish(domain.Event{
 			Type:     domain.EventConnectionUpdate,
@@ -370,13 +410,48 @@ func (m *Manager) handleEvent(tenantID string, evt interface{}) {
 
 	case *wmevents.LoggedOut:
 		if sess, err := m.ensureSession(ctx, tenantID); err == nil {
-			m.setSessionState(ctx, sess, domain.SessionStatusDisconnected, "")
+			if sess.qrCancel != nil {
+				sess.qrCancel()
+				sess.qrCancel = nil
+			}
+			m.setSessionState(ctx, sess, domain.SessionStatusDisconnected, "", "logged_out", "")
+			m.setSessionDiagnostic(ctx, sess, "logged_out", fmt.Sprintf("logged out by WhatsApp (reason=%d)", event.Reason), "")
 		}
 		m.eventBus.Publish(domain.Event{
 			Type:     domain.EventConnectionUpdate,
 			TenantID: tenantID,
 			Payload:  map[string]string{"status": string(domain.SessionStatusDisconnected)},
 		})
+
+	case *wmevents.ConnectFailure:
+		if sess, err := m.ensureSession(ctx, tenantID); err == nil {
+			if sess.qrCancel != nil {
+				sess.qrCancel()
+				sess.qrCancel = nil
+			}
+			m.setSessionState(ctx, sess, domain.SessionStatusDisconnected, sess.phone, "connect_failure", "")
+			m.setSessionDiagnostic(ctx, sess, "connect_failure", fmt.Sprintf("%s (reason=%d)", event.Message, event.Reason), "")
+		}
+		m.log.Warn("whatsapp connection failure", map[string]interface{}{
+			"tenant_id": tenantID,
+			"reason":    int(event.Reason),
+			"message":   event.Message,
+		})
+
+	case *wmevents.StreamReplaced:
+		if sess, err := m.ensureSession(ctx, tenantID); err == nil {
+			if sess.qrCancel != nil {
+				sess.qrCancel()
+				sess.qrCancel = nil
+			}
+			m.setSessionState(ctx, sess, domain.SessionStatusDisconnected, sess.phone, "stream_replaced", "")
+			m.setSessionDiagnostic(ctx, sess, "stream_replaced", "device session was replaced by another login", "")
+		}
+
+	case *wmevents.KeepAliveTimeout:
+		if sess, err := m.ensureSession(ctx, tenantID); err == nil {
+			m.setSessionDiagnostic(ctx, sess, "keepalive_timeout", fmt.Sprintf("keepalive timed out after %d consecutive failures", event.ErrorCount), "")
+		}
 
 	case *wmevents.Message:
 		if event.Info.IsFromMe {
@@ -441,10 +516,20 @@ func (m *Manager) handleEvent(tenantID string, evt interface{}) {
 	}
 }
 
-func (m *Manager) setSessionState(ctx context.Context, sess *session, status domain.SessionStatus, phone string) {
+func (m *Manager) setSessionState(ctx context.Context, sess *session, status domain.SessionStatus, phone, event, qrCode string) {
 	m.mu.Lock()
 	sess.status = status
 	sess.phone = phone
+	if event != "" {
+		sess.lastEvent = event
+	}
+	if qrCode != "" {
+		sess.qrCode = qrCode
+		sess.lastError = ""
+	}
+	if status == domain.SessionStatusConnected || status == domain.SessionStatusDisconnected {
+		sess.qrCode = ""
+	}
 	if sess.client.Store.ID != nil {
 		sess.deviceJID = sess.client.Store.ID.String()
 	}
@@ -460,6 +545,35 @@ func (m *Manager) setSessionState(ctx context.Context, sess *session, status dom
 	}
 	if err := m.sessionRepo.Upsert(ctx, record); err != nil {
 		m.log.Error("failed to persist whatsapp session", map[string]interface{}{"err": err.Error(), "tenant_id": sess.tenantID})
+	}
+}
+
+func (m *Manager) setSessionDiagnostic(ctx context.Context, sess *session, event, lastError, qrCode string) {
+	m.mu.Lock()
+	if event != "" {
+		sess.lastEvent = event
+	}
+	if lastError != "" {
+		sess.lastError = lastError
+	}
+	if qrCode != "" {
+		sess.qrCode = qrCode
+	}
+	if lastError != "" && qrCode == "" {
+		sess.qrCode = ""
+	}
+	sess.updatedAt = time.Now().UTC()
+	record := &domain.Session{
+		TenantID:  sess.tenantID,
+		DeviceJID: sess.deviceJID,
+		Phone:     sess.phone,
+		Status:    sess.status,
+		UpdatedAt: sess.updatedAt,
+	}
+	m.mu.Unlock()
+
+	if err := m.sessionRepo.Upsert(ctx, record); err != nil {
+		m.log.Error("failed to persist whatsapp session diagnostics", map[string]interface{}{"err": err.Error(), "tenant_id": sess.tenantID})
 	}
 }
 

@@ -123,6 +123,8 @@ go run ./cmd/api
 | `DELETE` | `/auth/apikey/{id}` | Revogar API Key |
 | `POST` | `/whatsapp/connect` | Gerar QR Code para conexão |
 | `GET` | `/whatsapp/status` | Status da sessão WhatsApp |
+| `GET` | `/whatsapp/qr` | Página HTML com o QR code atual |
+| `GET` | `/whatsapp/qr.png` | PNG do QR code atual |
 | `POST` | `/whatsapp/disconnect` | Desconectar sessão WhatsApp |
 | `POST` | `/whatsapp/logout` | Desparear a sessão do WhatsApp |
 | `POST` | `/messages/send` | Enviar mensagem de texto |
@@ -202,8 +204,21 @@ curl -X POST http://localhost:8080/whatsapp/connect \
 ```json
 {
   "qr_code": "string-do-qr-real",
+  "qr_png_url": "http://localhost:8080/whatsapp/qr.png",
+  "qr_page_url": "http://localhost:8080/whatsapp/qr",
   "status": "connecting"
 }
+```
+
+Para abrir o QR como imagem local:
+
+```powershell
+Invoke-WebRequest `
+  -Uri "http://localhost:8080/whatsapp/qr.png" `
+  -Headers @{ Authorization = "Bearer sua_api_key" } `
+  -OutFile ".\whatsapp-qr.png"
+
+Start-Process ".\whatsapp-qr.png"
 ```
 
 ### Registrar Webhook
@@ -339,6 +354,7 @@ Fluxo operacional:
 - `POST /auth/bootstrap` cria tenant, assinatura inicial e primeira API key.
 - `POST /whatsapp/connect` inicia o pareamento e retorna o QR real quando necessário.
 - Eventos inbound, receipts e mudanças de conexão são persistidos e publicados para WebSocket e webhook.
+- `GET /whatsapp/status` também expõe `last_event`, `last_error` e links do QR quando a sessão estiver em pareamento.
 
 ---
 

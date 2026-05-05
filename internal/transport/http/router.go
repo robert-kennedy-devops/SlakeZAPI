@@ -62,6 +62,8 @@ func NewRouter(
 	// WhatsApp
 	mux.Handle("POST /whatsapp/connect", withAuth(waH.Connect))
 	mux.Handle("GET /whatsapp/status", withAuth(waH.Status))
+	mux.Handle("GET /whatsapp/qr", withAuth(waH.QRPage))
+	mux.Handle("GET /whatsapp/qr.png", withAuth(waH.QRPNG))
 	mux.Handle("POST /whatsapp/disconnect", withAuth(waH.Disconnect))
 	mux.Handle("POST /whatsapp/logout", withAuth(waH.Logout))
 

@@ -146,6 +146,9 @@ type Session struct {
 	Status    SessionStatus `json:"status"`
 	Phone     string        `json:"phone"`
 	UpdatedAt time.Time     `json:"updated_at"`
+	LastEvent string        `json:"last_event,omitempty"`
+	LastError string        `json:"last_error,omitempty"`
+	QRCode    string        `json:"qr_code,omitempty"`
 }
 
 // ─── Event ───────────────────────────────────────────────────────────────────
@@ -236,9 +239,12 @@ type ConnectRequest struct {
 }
 
 type ConnectResponse struct {
-	QRCode string `json:"qr_code"` // base64 PNG or text QR
-	Status string `json:"status"`
-	Phone  string `json:"phone,omitempty"`
+	QRCode    string `json:"qr_code,omitempty"` // raw QR payload from WhatsApp
+	QRPNGURL  string `json:"qr_png_url,omitempty"`
+	QRPageURL string `json:"qr_page_url,omitempty"`
+	Status    string `json:"status"`
+	Phone     string `json:"phone,omitempty"`
+	LastError string `json:"last_error,omitempty"`
 }
 
 type RegisterWebhookRequest struct {
