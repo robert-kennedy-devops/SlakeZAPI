@@ -1,0 +1,35 @@
+# Binaries
+/api
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go build cache
+/vendor/
+go.sum
+
+# Environment
+.env
+!.env.example
+
+# WhatsApp session data (contains auth credentials)
+/data/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker overrides
+docker-compose.override.yml
+
+# Test coverage
+*.out
+coverage.html

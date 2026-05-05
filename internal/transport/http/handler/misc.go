@@ -1,0 +1,109 @@
+package handler
+
+import (
+	"net/http"
+
+	"github.com/whatsapp-saas/api/internal/domain"
+	"github.com/whatsapp-saas/api/internal/middleware"
+	"github.com/whatsapp-saas/api/internal/usecase"
+	"github.com/whatsapp-saas/api/pkg/httputil"
+	"github.com/whatsapp-saas/api/pkg/logger"
+)
+
+// ─── Webhook Handler ──────────────────────────────────────────────────────────
+
+type WebhookHandler struct {
+	webhookUC *usecase.WebhookUsecase
+	billingUC *usecase.BillingUsecase
+	log       *logger.Logger
+}
+
+func NewWebhookHandler(webhookUC *usecase.WebhookUsecase, billingUC *usecase.BillingUsecase, log *logger.Logger) *WebhookHandler {
+	return &WebhookHandler{webhookUC: webhookUC, billingUC: billingUC, log: log}
+}
+
+// Register godoc
+// POST /webhook
+// Body: {"url": "https://myapp.com/hook", "events": ["message.received"]}
+func (h *WebhookHandler) Register(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.TenantFromCtx(r.Context())
+	if tenantID == "" {
+		httputil.Error(w, http.StatusUnauthorized, "missing tenant context")
+		return
+	}
+
+	var req domain.RegisterWebhookRequest
+	if err := httputil.Decode(r, &req); err != nil {
+		httputil.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.URL == "" {
+		httputil.Error(w, http.StatusBadRequest, "url is required")
+		return
+	}
+	if len(req.Events) == 0 {
+		req.Events = []string{"message.received", "message.sent", "message.status", "connection.update"}
+	}
+
+	wh, err := h.webhookUC.Register(r.Context(), tenantID, req)
+	if err != nil {
+		httputil.DomainError(w, err)
+		return
+	}
+	h.log.WithContext(r.Context()).Audit("webhook.register", map[string]interface{}{
+		"webhook_id": wh.ID,
+		"url":        wh.URL,
+		"events":     wh.Events,
+	})
+
+	httputil.JSON(w, http.StatusCreated, wh)
+}
+
+// List godoc
+// GET /webhook
+func (h *WebhookHandler) List(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.TenantFromCtx(r.Context())
+
+	hooks, err := h.webhookUC.ListByTenant(r.Context(), tenantID)
+	if err != nil {
+		httputil.DomainError(w, err)
+		return
+	}
+
+	httputil.JSON(w, http.StatusOK, hooks)
+}
+
+func (h *WebhookHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.TenantFromCtx(r.Context())
+	if tenantID == "" {
+		httputil.Error(w, http.StatusUnauthorized, "missing tenant context")
+		return
+	}
+
+	if err := h.webhookUC.Delete(r.Context(), tenantID, r.PathValue("id")); err != nil {
+		httputil.DomainError(w, err)
+		return
+	}
+	h.log.WithContext(r.Context()).Audit("webhook.delete", map[string]interface{}{
+		"webhook_id": r.PathValue("id"),
+	})
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *WebhookHandler) Usage(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.TenantFromCtx(r.Context())
+	if tenantID == "" {
+		httputil.Error(w, http.StatusUnauthorized, "missing tenant context")
+		return
+	}
+
+	usage, err := h.billingUC.GetUsage(r.Context(), tenantID)
+	if err != nil {
+		httputil.DomainError(w, err)
+		return
+	}
+
+	httputil.JSON(w, http.StatusOK, usage)
+}

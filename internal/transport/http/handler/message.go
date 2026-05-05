@@ -1,0 +1,139 @@
+package handler
+
+import (
+	"net/http"
+	"strconv"
+
+	"github.com/whatsapp-saas/api/internal/domain"
+	"github.com/whatsapp-saas/api/internal/middleware"
+	"github.com/whatsapp-saas/api/internal/usecase"
+	"github.com/whatsapp-saas/api/pkg/httputil"
+	"github.com/whatsapp-saas/api/pkg/logger"
+)
+
+// MessageHandler exposes messaging endpoints.
+type MessageHandler struct {
+	msgUC *usecase.MessageUsecase
+	log   *logger.Logger
+}
+
+func NewMessageHandler(msgUC *usecase.MessageUsecase, log *logger.Logger) *MessageHandler {
+	return &MessageHandler{msgUC: msgUC, log: log}
+}
+
+// Send godoc
+// POST /messages/send
+// Header: Authorization: Bearer <api_key>
+// Body: {"phone": "5511999999999", "message": "Hello!"}
+func (h *MessageHandler) Send(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.TenantFromCtx(r.Context())
+	if tenantID == "" {
+		httputil.Error(w, http.StatusUnauthorized, "missing tenant context")
+		return
+	}
+
+	var req domain.SendMessageRequest
+	if err := httputil.Decode(r, &req); err != nil {
+		httputil.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	resp, err := h.msgUC.SendMessage(r.Context(), tenantID, req)
+	if err != nil {
+		httputil.DomainError(w, err)
+		return
+	}
+	h.log.WithContext(r.Context()).Audit("message.send", map[string]interface{}{
+		"message_id": resp.MessageID,
+		"phone":      req.Phone,
+		"type":       "text",
+	})
+
+	httputil.JSON(w, http.StatusOK, resp)
+}
+
+func (h *MessageHandler) SendMedia(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.TenantFromCtx(r.Context())
+	if tenantID == "" {
+		httputil.Error(w, http.StatusUnauthorized, "missing tenant context")
+		return
+	}
+
+	var req domain.SendMediaMessageRequest
+	if err := httputil.Decode(r, &req); err != nil {
+		httputil.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	resp, err := h.msgUC.SendMediaMessage(r.Context(), tenantID, req)
+	if err != nil {
+		httputil.DomainError(w, err)
+		return
+	}
+	h.log.WithContext(r.Context()).Audit("message.send_media", map[string]interface{}{
+		"message_id": resp.MessageID,
+		"phone":      req.Phone,
+		"type":       req.Type,
+		"mime_type":  req.MimeType,
+	})
+
+	httputil.JSON(w, http.StatusOK, resp)
+}
+
+func (h *MessageHandler) List(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.TenantFromCtx(r.Context())
+	if tenantID == "" {
+		httputil.Error(w, http.StatusUnauthorized, "missing tenant context")
+		return
+	}
+
+	resp, err := h.msgUC.ListMessages(r.Context(), tenantID, r.URL.Query())
+	if err != nil {
+		httputil.DomainError(w, err)
+		return
+	}
+
+	httputil.JSON(w, http.StatusOK, resp)
+}
+
+func (h *MessageHandler) Get(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.TenantFromCtx(r.Context())
+	if tenantID == "" {
+		httputil.Error(w, http.StatusUnauthorized, "missing tenant context")
+		return
+	}
+
+	resp, err := h.msgUC.GetMessage(r.Context(), tenantID, r.PathValue("id"))
+	if err != nil {
+		httputil.DomainError(w, err)
+		return
+	}
+
+	httputil.JSON(w, http.StatusOK, resp)
+}
+
+func (h *MessageHandler) GetMedia(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.TenantFromCtx(r.Context())
+	if tenantID == "" {
+		httputil.Error(w, http.StatusUnauthorized, "missing tenant context")
+		return
+	}
+
+	resp, err := h.msgUC.GetMessageMedia(r.Context(), tenantID, r.PathValue("id"))
+	if err != nil {
+		httputil.DomainError(w, err)
+		return
+	}
+
+	if resp.MimeType != "" {
+		w.Header().Set("Content-Type", resp.MimeType)
+	} else {
+		w.Header().Set("Content-Type", "application/octet-stream")
+	}
+	if resp.FileName != "" {
+		w.Header().Set("Content-Disposition", `attachment; filename="`+resp.FileName+`"`)
+	}
+	w.Header().Set("Content-Length", strconv.Itoa(len(resp.Data)))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(resp.Data)
+}
