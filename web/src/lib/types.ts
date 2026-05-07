@@ -135,6 +135,33 @@ export interface SendMessageResponse {
   status: string;
 }
 
+export interface ResolvedContact {
+  input_phone: string;
+  lookup_phone: string;
+  phone: string;
+  jid?: string;
+  is_whatsapp: boolean;
+  verified_name?: string;
+  error?: string;
+}
+
+export interface BulkSendMessageItem {
+  input_phone: string;
+  phone?: string;
+  is_whatsapp: boolean;
+  message_id?: string;
+  status?: string;
+  error?: string;
+}
+
+export interface BulkSendMessageResponse {
+  total: number;
+  accepted: number;
+  sent: number;
+  failed: number;
+  results: BulkSendMessageItem[];
+}
+
 export interface AppEvent<T = unknown> {
   type: string;
   tenant_id: string;

@@ -100,6 +100,7 @@ type WhatsAppService interface {
 	Logout(ctx context.Context, tenantID string) error
 	SendMessage(ctx context.Context, tenantID, phone, message string) (string, error) // returns whatsapp msg ID
 	SendMediaMessage(ctx context.Context, tenantID string, req SendMediaMessageRequest) (string, error)
+	ResolveContacts(ctx context.Context, tenantID string, phones []string) ([]ResolvedContact, error)
 	DownloadMedia(ctx context.Context, tenantID string, msg *Message) (*MediaDownload, error)
 	GetSession(ctx context.Context, tenantID string) (*Session, error)
 	GetStatus(ctx context.Context, tenantID string) SessionStatus

@@ -149,7 +149,9 @@ O painel web usa login de usuário em `/app/auth/*`, seleção de tenant por hea
 | `POST` | `/whatsapp/disconnect` | Desconectar sessão WhatsApp |
 | `POST` | `/whatsapp/logout` | Desparear a sessão do WhatsApp |
 | `POST` | `/messages/send` | Enviar mensagem de texto |
+| `POST` | `/messages/send-bulk` | Enviar mensagem em massa para vários números |
 | `POST` | `/messages/send-media` | Enviar imagem, video, audio ou documento por URL |
+| `POST` | `/contacts/resolve` | Reconhecer quais números existem no WhatsApp |
 | `GET` | `/messages` | Listar mensagens do tenant |
 | `GET` | `/messages/{id}` | Consultar uma mensagem específica |
 | `GET` | `/messages/{id}/media` | Baixar o binário de uma mídia recebida |
@@ -165,7 +167,9 @@ O painel web usa login de usuário em `/app/auth/*`, seleção de tenant por hea
 | `GET` | `/app/tenant/summary` | Resumo do tenant selecionado |
 | `GET` | `/app/messages` | Listar mensagens usando sessão de usuário |
 | `POST` | `/app/messages/send` | Enviar mensagem usando sessão de usuário |
+| `POST` | `/app/messages/send-bulk` | Disparo em massa usando sessão de usuário |
 | `POST` | `/app/messages/send-media` | Enviar mídia usando sessão de usuário |
+| `POST` | `/app/contacts/resolve` | Reconhecer contatos válidos para envio |
 | `GET` | `/app/webhooks` | Listar webhooks no dashboard |
 | `POST` | `/app/webhooks` | Criar webhook no dashboard |
 | `GET` | `/app/apikeys` | Listar API keys no dashboard |
@@ -224,6 +228,27 @@ curl -X POST http://localhost:8080/messages/send \
   "message_id": "3EB0...",
   "status": "sent"
 }
+```
+
+### Reconhecer contatos
+
+```bash
+curl -X POST http://localhost:8080/contacts/resolve \
+  -H "Authorization: Bearer sua_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{"phones":["5511999999999","+55 (11) 98888-8888"]}'
+```
+
+### Envio em massa
+
+```bash
+curl -X POST http://localhost:8080/messages/send-bulk \
+  -H "Authorization: Bearer sua_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "phones": ["5511999999999", "5511888888888"],
+    "message": "Campanha de teste"
+  }'
 ```
 
 ### Enviar mídia

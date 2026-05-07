@@ -17,10 +17,11 @@ import {
   Webhook,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import type { ReactNode } from "react";
+import type { ChangeEvent, ReactNode } from "react";
 import {
   useDeferredValue,
   useEffect,
+  useId,
   useMemo,
   useState,
   useTransition,
@@ -41,6 +42,7 @@ import {
 } from "@/lib/auth";
 import type {
   AppEvent,
+  ResolvedContact,
   CurrentUserResponse,
   Message,
   TenantMember,
@@ -69,9 +71,16 @@ const ROLE_LABELS: Record<UserRole, string> = {
 export function DashboardClient() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const csvInputID = useId();
   const [token, setToken] = useState("");
   const [selectedTenantID, setTenant] = useState("");
   const [sendForm, setSendForm] = useState({ phone: "", message: "" });
+  const [contactInput, setContactInput] = useState("");
+  const [bulkMessage, setBulkMessage] = useState("");
+  const [resolvedContacts, setResolvedContacts] = useState<ResolvedContact[]>(
+    [],
+  );
+  const [selectedBulkPhones, setSelectedBulkPhones] = useState<string[]>([]);
   const [mediaForm, setMediaForm] = useState({
     phone: "",
     type: "image",
@@ -217,6 +226,43 @@ export function DashboardClient() {
     onError: handleMutationError,
   });
 
+  const resolveContacts = useMutation({
+    mutationFn: async () =>
+      api.resolveContacts(token, tenantHeader, {
+        phones: contactInput
+          .split(/\r?\n|,|;/)
+          .map((item) => item.trim())
+          .filter(Boolean),
+      }),
+    onSuccess: (contacts) => {
+      setResolvedContacts(contacts);
+      setSelectedBulkPhones(
+        contacts
+          .filter((item) => item.is_whatsapp && item.phone)
+          .map((item) => item.phone),
+      );
+      notify(
+        `${contacts.filter((item) => item.is_whatsapp).length} contatos reconhecidos no WhatsApp.`,
+      );
+    },
+    onError: handleMutationError,
+  });
+
+  const sendBulkMessage = useMutation({
+    mutationFn: () =>
+      api.sendBulkMessage(token, tenantHeader, {
+        phones: selectedBulkPhones,
+        message: bulkMessage,
+      }),
+    onSuccess: (result) => {
+      notify(
+        `Disparo concluido: ${result.sent} enviados, ${result.failed} falharam.`,
+      );
+      invalidateTenant(tenantHeader, queryClient);
+    },
+    onError: handleMutationError,
+  });
+
   const createWebhook = useMutation({
     mutationFn: () =>
       api.createWebhook(token, tenantHeader, {
@@ -305,6 +351,41 @@ export function DashboardClient() {
     const message =
       error instanceof Error ? error.message : "Falha inesperada.";
     setFlash(message);
+  }
+
+  function toggleBulkPhone(phone: string) {
+    setSelectedBulkPhones((current) =>
+      current.includes(phone)
+        ? current.filter((item) => item !== phone)
+        : [...current, phone],
+    );
+  }
+
+  function selectAllResolved() {
+    setSelectedBulkPhones(
+      resolvedContacts
+        .filter((item) => item.is_whatsapp && item.phone)
+        .map((item) => item.phone),
+    );
+  }
+
+  async function importCSV(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const phones = parsePhonesFromCSV(text);
+      if (!phones.length) {
+        notify("Nenhum telefone valido encontrado no CSV.");
+        return;
+      }
+      setContactInput(phones.join("\n"));
+      notify(`${phones.length} numeros importados do CSV.`);
+    } catch (error) {
+      handleMutationError(error);
+    }
   }
 
   const currentUser = meQuery.data as CurrentUserResponse | undefined;
@@ -636,6 +717,156 @@ export function DashboardClient() {
                   }
                 />
               </FormPanel>
+            </div>
+
+            <div className="panel p-6">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <p className="panel-title">Reconhecimento e Disparo</p>
+                  <h2 className="mt-2 text-xl font-semibold text-white">
+                    Selecionar contatos e enviar em massa
+                  </h2>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
+                    Cole uma lista de numeros com DDI. O backend valida quais
+                    existem no WhatsApp e voce pode selecionar varios para
+                    disparo em lote.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  <label
+                    className="button-secondary cursor-pointer"
+                    htmlFor={csvInputID}
+                  >
+                    Importar CSV
+                  </label>
+                  <button
+                    className="button-secondary"
+                    disabled={resolveContacts.isPending}
+                    onClick={() => resolveContacts.mutate()}
+                    type="button"
+                  >
+                    Reconhecer contatos
+                  </button>
+                  <button
+                    className="button-primary"
+                    disabled={
+                      sendBulkMessage.isPending ||
+                      selectedBulkPhones.length === 0 ||
+                      !bulkMessage.trim()
+                    }
+                    onClick={() => sendBulkMessage.mutate()}
+                    type="button"
+                  >
+                    Enviar em massa
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-6 grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+                <div className="space-y-3">
+                  <input
+                    accept=".csv,text/csv"
+                    className="hidden"
+                    id={csvInputID}
+                    onChange={importCSV}
+                    type="file"
+                  />
+                  <textarea
+                    className="input min-h-56 py-3"
+                    placeholder={
+                      "5511999999999\n5511888888888\n+55 (11) 97777-7777"
+                    }
+                    value={contactInput}
+                    onChange={(event) => setContactInput(event.target.value)}
+                  />
+                  <textarea
+                    className="input min-h-36 py-3"
+                    placeholder="Mensagem que sera enviada para os contatos selecionados"
+                    value={bulkMessage}
+                    onChange={(event) => setBulkMessage(event.target.value)}
+                  />
+                  <div className="flex flex-wrap gap-3 text-xs text-slate-400">
+                    <span>{resolvedContacts.length} contatos analisados</span>
+                    <span>{selectedBulkPhones.length} selecionados</span>
+                  </div>
+                </div>
+
+                <div className="rounded-3xl border border-white/10 bg-slate-950/50 p-5">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-white">
+                        Contatos reconhecidos
+                      </p>
+                      <p className="mt-1 text-xs text-slate-400">
+                        Contatos com WhatsApp podem ser selecionados para envio
+                        em massa.
+                      </p>
+                    </div>
+                    <button
+                      className="button-secondary"
+                      disabled={!resolvedContacts.length}
+                      onClick={selectAllResolved}
+                      type="button"
+                    >
+                      Selecionar validos
+                    </button>
+                  </div>
+
+                  <div className="space-y-3">
+                    {resolvedContacts.length ? (
+                      resolvedContacts.map((contact) => {
+                        const checked = selectedBulkPhones.includes(
+                          contact.phone,
+                        );
+                        const disabled = !contact.is_whatsapp || !contact.phone;
+                        return (
+                          <label
+                            key={`${contact.input_phone}-${contact.phone}`}
+                            className="flex cursor-pointer items-start gap-3 rounded-2xl border border-white/10 bg-slate-950/60 p-4"
+                          >
+                            <input
+                              checked={checked}
+                              className="mt-1"
+                              disabled={disabled}
+                              onChange={() => toggleBulkPhone(contact.phone)}
+                              type="checkbox"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-sm font-semibold text-white">
+                                  {contact.verified_name ||
+                                    contact.phone ||
+                                    contact.input_phone}
+                                </span>
+                                <span
+                                  className={`badge ${contact.is_whatsapp ? "text-glow" : "text-danger"}`}
+                                >
+                                  {contact.is_whatsapp
+                                    ? "whatsapp"
+                                    : "invalido"}
+                                </span>
+                              </div>
+                              <p className="mt-1 text-xs text-slate-400">
+                                entrada: {contact.input_phone}
+                              </p>
+                              <p className="mt-1 text-xs text-slate-500">
+                                canonico: {contact.phone || "-"}
+                              </p>
+                              {contact.error ? (
+                                <p className="mt-2 text-xs text-danger">
+                                  {contact.error}
+                                </p>
+                              ) : null}
+                            </div>
+                          </label>
+                        );
+                      })
+                    ) : (
+                      <EmptyState label="Cole os numeros e clique em reconhecer contatos." />
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="panel p-6">
@@ -1058,4 +1289,24 @@ function LoadingScreen({
       </div>
     </main>
   );
+}
+
+function parsePhonesFromCSV(content: string) {
+  const lines = content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (!lines.length) return [];
+
+  const phonePattern = /(?:\+?\d[\d\s().-]{7,}\d)/g;
+  const phones = new Set<string>();
+  for (const line of lines) {
+    const matches = line.match(phonePattern);
+    if (!matches?.length) continue;
+    for (const match of matches) {
+      phones.add(match.trim());
+    }
+  }
+
+  return Array.from(phones);
 }

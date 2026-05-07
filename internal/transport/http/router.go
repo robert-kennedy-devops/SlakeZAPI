@@ -99,7 +99,9 @@ func NewRouter(
 	mux.Handle("POST /app/whatsapp/logout", withUserRole(waH.Logout, domain.UserRoleOwner, domain.UserRoleAdmin))
 
 	mux.Handle("POST /app/messages/send", withUserRole(msgH.Send, domain.UserRoleOwner, domain.UserRoleAdmin, domain.UserRoleOperator))
+	mux.Handle("POST /app/messages/send-bulk", withUserRole(msgH.SendBulk, domain.UserRoleOwner, domain.UserRoleAdmin, domain.UserRoleOperator))
 	mux.Handle("POST /app/messages/send-media", withUserRole(msgH.SendMedia, domain.UserRoleOwner, domain.UserRoleAdmin, domain.UserRoleOperator))
+	mux.Handle("POST /app/contacts/resolve", withUserRole(msgH.ResolveContacts, domain.UserRoleOwner, domain.UserRoleAdmin, domain.UserRoleOperator, domain.UserRoleViewer))
 	mux.Handle("GET /app/messages", withUserRole(msgH.List, domain.UserRoleOwner, domain.UserRoleAdmin, domain.UserRoleOperator, domain.UserRoleViewer))
 	mux.Handle("GET /app/messages/{id}", withUserRole(msgH.Get, domain.UserRoleOwner, domain.UserRoleAdmin, domain.UserRoleOperator, domain.UserRoleViewer))
 	mux.Handle("GET /app/messages/{id}/media", withUserRole(msgH.GetMedia, domain.UserRoleOwner, domain.UserRoleAdmin, domain.UserRoleOperator, domain.UserRoleViewer))
@@ -126,7 +128,9 @@ func NewRouter(
 
 	// Messages
 	mux.Handle("POST /messages/send", withAuth(msgH.Send))
+	mux.Handle("POST /messages/send-bulk", withAuth(msgH.SendBulk))
 	mux.Handle("POST /messages/send-media", withAuth(msgH.SendMedia))
+	mux.Handle("POST /contacts/resolve", withAuth(msgH.ResolveContacts))
 	mux.Handle("GET /messages", withAuth(msgH.List))
 	mux.Handle("GET /messages/{id}", withAuth(msgH.Get))
 	mux.Handle("GET /messages/{id}/media", withAuth(msgH.GetMedia))

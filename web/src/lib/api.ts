@@ -4,6 +4,8 @@ import type {
   CreateAPIKeyResponse,
   CurrentUserResponse,
   Message,
+  BulkSendMessageResponse,
+  ResolvedContact,
   SendMessageResponse,
   SessionStatus,
   TenantMember,
@@ -165,6 +167,28 @@ export const api = {
     },
   ) =>
     request<SendMessageResponse>("/app/messages/send-media", {
+      method: "POST",
+      token,
+      tenantID,
+      body,
+    }),
+  resolveContacts: (
+    token: string,
+    tenantID: string,
+    body: { phones: string[] },
+  ) =>
+    request<ResolvedContact[]>("/app/contacts/resolve", {
+      method: "POST",
+      token,
+      tenantID,
+      body,
+    }),
+  sendBulkMessage: (
+    token: string,
+    tenantID: string,
+    body: { phones: string[]; message: string },
+  ) =>
+    request<BulkSendMessageResponse>("/app/messages/send-bulk", {
       method: "POST",
       token,
       tenantID,

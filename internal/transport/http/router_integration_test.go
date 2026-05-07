@@ -54,6 +54,24 @@ func (f *fakeWhatsAppService) SendMediaMessage(ctx context.Context, tenantID str
 	return "wa-media-1", nil
 }
 
+func (f *fakeWhatsAppService) ResolveContacts(ctx context.Context, tenantID string, phones []string) ([]domain.ResolvedContact, error) {
+	out := make([]domain.ResolvedContact, 0, len(phones))
+	for _, phone := range phones {
+		contact := domain.ResolvedContact{
+			LookupPhone: "+" + phone,
+			Phone:       phone,
+			JID:         phone + "@s.whatsapp.net",
+			IsWhatsApp:  true,
+		}
+		if phone == "5511000000000" {
+			contact.IsWhatsApp = false
+			contact.Error = "phone is not registered on WhatsApp"
+		}
+		out = append(out, contact)
+	}
+	return out, nil
+}
+
 func (f *fakeWhatsAppService) DownloadMedia(ctx context.Context, tenantID string, msg *domain.Message) (*domain.MediaDownload, error) {
 	if len(f.mediaContent) == 0 {
 		return nil, domain.ErrMessageMediaAbsent
@@ -123,6 +141,43 @@ func TestRouterBootstrapAndSendMessageFlow(t *testing.T) {
 	}
 	if listResp[0].Type != "text" || listResp[0].Body != "hello integration" {
 		t.Fatalf("unexpected persisted message: %+v", listResp[0])
+	}
+}
+
+func TestRouterResolveContactsAndSendBulk(t *testing.T) {
+	db := testutil.OpenTestDB(t)
+	server := newIntegrationServer(t, db)
+
+	bootstrapResp := struct {
+		TenantID string `json:"tenant_id"`
+		APIKey   struct {
+			APIKey string `json:"api_key"`
+		} `json:"api_key"`
+	}{}
+	requestJSON(t, server, nil, http.MethodPost, "/auth/bootstrap", "", map[string]string{
+		"name":  "Tenant Bulk",
+		"email": "bulk@example.com",
+		"plan":  "growth",
+	}, http.StatusCreated, &bootstrapResp)
+
+	var contacts []domain.ResolvedContact
+	requestJSON(t, server, nil, http.MethodPost, "/contacts/resolve", bootstrapResp.APIKey.APIKey, map[string][]string{
+		"phones": []string{"(11) 94566-0620", "5511000000000"},
+	}, http.StatusOK, &contacts)
+	if len(contacts) != 2 {
+		t.Fatalf("expected 2 contacts, got %d", len(contacts))
+	}
+	if contacts[0].Phone == "" {
+		t.Fatalf("expected normalized phone in response: %+v", contacts[0])
+	}
+
+	var bulkResp domain.BulkSendMessageResponse
+	requestJSON(t, server, nil, http.MethodPost, "/messages/send-bulk", bootstrapResp.APIKey.APIKey, map[string]interface{}{
+		"phones":  []string{"(11) 94566-0620", "5511000000000"},
+		"message": "hello everyone",
+	}, http.StatusOK, &bulkResp)
+	if bulkResp.Total != 2 || bulkResp.Accepted != 1 || bulkResp.Sent != 1 || bulkResp.Failed != 1 {
+		t.Fatalf("unexpected bulk response: %+v", bulkResp)
 	}
 }
 

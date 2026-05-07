@@ -17,7 +17,10 @@ import (
 	"github.com/whatsapp-saas/api/pkg/logger"
 )
 
-var phoneRegex = regexp.MustCompile(`^\d{7,15}$`)
+var (
+	phoneRegex      = regexp.MustCompile(`^\d{8,15}$`)
+	nonDigitPattern = regexp.MustCompile(`\D`)
+)
 
 const maxMediaDownloadSize = 32 << 20
 
@@ -84,6 +87,44 @@ func (u *MessageUsecase) GetMessageMedia(ctx context.Context, tenantID, messageI
 	return download, nil
 }
 
+func (u *MessageUsecase) ResolveContacts(ctx context.Context, tenantID string, req domain.ResolveContactsRequest) ([]domain.ResolvedContact, error) {
+	normalized, originalByNormalized, err := normalizePhoneInputs(req.Phones)
+	if err != nil {
+		return nil, err
+	}
+	recognized, err := u.whatsapp.ResolveContacts(ctx, tenantID, normalized)
+	if err != nil {
+		return nil, err
+	}
+
+	byLookup := make(map[string]domain.ResolvedContact, len(recognized))
+	for _, contact := range recognized {
+		byLookup[strings.TrimPrefix(contact.LookupPhone, "+")] = contact
+	}
+
+	results := make([]domain.ResolvedContact, 0, len(normalized))
+	for _, phone := range normalized {
+		contact, ok := byLookup[phone]
+		if !ok {
+			results = append(results, domain.ResolvedContact{
+				InputPhone:  originalByNormalized[phone],
+				LookupPhone: "+" + phone,
+				Phone:       phone,
+				IsWhatsApp:  false,
+				Error:       "contact lookup returned no result",
+			})
+			continue
+		}
+		contact.InputPhone = originalByNormalized[phone]
+		if contact.Phone == "" {
+			contact.Phone = phone
+		}
+		results = append(results, contact)
+	}
+
+	return results, nil
+}
+
 func NewMessageUsecase(
 	msgRepo domain.MessageRepository,
 	whatsapp domain.WhatsAppService,
@@ -102,33 +143,39 @@ func NewMessageUsecase(
 
 // SendMessage validates, checks billing, sends via WhatsApp, and persists the message.
 func (u *MessageUsecase) SendMessage(ctx context.Context, tenantID string, req domain.SendMessageRequest) (*domain.SendMessageResponse, error) {
-	// 1. Validate phone
-	if !phoneRegex.MatchString(req.Phone) {
-		return nil, domain.ErrInvalidPhone
-	}
 	if req.Message == "" {
 		return nil, fmt.Errorf("%w: message body is required", domain.ErrBadRequest)
 	}
 
-	// 2. Check plan limit
+	resolvedPhone, err := u.resolveSingleRecipient(ctx, tenantID, req.Phone)
+	if err != nil {
+		return nil, err
+	}
+
+	return u.sendTextToResolvedPhone(ctx, tenantID, resolvedPhone, req.Message)
+}
+
+func (u *MessageUsecase) sendTextToResolvedPhone(ctx context.Context, tenantID, phone, message string) (*domain.SendMessageResponse, error) {
+	if message == "" {
+		return nil, fmt.Errorf("%w: message body is required", domain.ErrBadRequest)
+	}
+
 	if err := u.billing.CheckLimit(ctx, tenantID); err != nil {
 		return nil, err
 	}
 
-	// 3. Send via WhatsApp
-	waID, err := u.whatsapp.SendMessage(ctx, tenantID, req.Phone, req.Message)
+	waID, err := u.whatsapp.SendMessage(ctx, tenantID, phone, message)
 	if err != nil {
 		return nil, fmt.Errorf("whatsapp send: %w", err)
 	}
 
-	// 4. Persist message record
 	now := time.Now().UTC()
 	msg := &domain.Message{
 		ID:         uuid.NewString(),
 		TenantID:   tenantID,
 		WhatsAppID: waID,
-		Phone:      req.Phone,
-		Body:       req.Message,
+		Phone:      phone,
+		Body:       message,
 		Type:       "text",
 		Direction:  "outbound",
 		Status:     domain.MessageStatusSent,
@@ -141,14 +188,12 @@ func (u *MessageUsecase) SendMessage(ctx context.Context, tenantID string, req d
 		// non-fatal: message was sent, log and continue
 	}
 
-	// 5. Track usage
 	go func() {
 		if err := u.billing.TrackSent(context.Background(), tenantID); err != nil {
 			u.log.WithContext(ctx).Error("usage tracking failed", map[string]interface{}{"err": err.Error()})
 		}
 	}()
 
-	// 6. Publish event to internal bus
 	u.eventBus.Publish(domain.Event{
 		Type:     domain.EventMessageSent,
 		TenantID: tenantID,
@@ -156,7 +201,7 @@ func (u *MessageUsecase) SendMessage(ctx context.Context, tenantID string, req d
 	})
 
 	u.log.WithContext(ctx).Info("message sent", map[string]interface{}{
-		"message_id": msg.ID, "phone": req.Phone,
+		"message_id": msg.ID, "phone": phone,
 	})
 
 	return &domain.SendMessageResponse{
@@ -165,10 +210,53 @@ func (u *MessageUsecase) SendMessage(ctx context.Context, tenantID string, req d
 	}, nil
 }
 
-func (u *MessageUsecase) SendMediaMessage(ctx context.Context, tenantID string, req domain.SendMediaMessageRequest) (*domain.SendMessageResponse, error) {
-	if !phoneRegex.MatchString(req.Phone) {
-		return nil, domain.ErrInvalidPhone
+func (u *MessageUsecase) SendBulkMessage(ctx context.Context, tenantID string, req domain.BulkSendMessageRequest) (*domain.BulkSendMessageResponse, error) {
+	if strings.TrimSpace(req.Message) == "" {
+		return nil, fmt.Errorf("%w: message body is required", domain.ErrBadRequest)
 	}
+	if len(req.Phones) == 0 {
+		return nil, fmt.Errorf("%w: at least one phone is required", domain.ErrBadRequest)
+	}
+
+	contacts, err := u.ResolveContacts(ctx, tenantID, domain.ResolveContactsRequest{Phones: req.Phones})
+	if err != nil {
+		return nil, err
+	}
+
+	response := &domain.BulkSendMessageResponse{
+		Total:   len(req.Phones),
+		Results: make([]domain.BulkSendMessageItem, 0, len(contacts)),
+	}
+	for _, contact := range contacts {
+		item := domain.BulkSendMessageItem{
+			InputPhone: contact.InputPhone,
+			Phone:      contact.Phone,
+			IsWhatsApp: contact.IsWhatsApp,
+		}
+		if !contact.IsWhatsApp {
+			item.Error = contact.Error
+			response.Failed++
+			response.Results = append(response.Results, item)
+			continue
+		}
+
+		response.Accepted++
+		singleResp, sendErr := u.sendTextToResolvedPhone(ctx, tenantID, contact.Phone, req.Message)
+		if sendErr != nil {
+			item.Error = sendErr.Error()
+			response.Failed++
+		} else {
+			item.MessageID = singleResp.MessageID
+			item.Status = singleResp.Status
+			response.Sent++
+		}
+		response.Results = append(response.Results, item)
+	}
+
+	return response, nil
+}
+
+func (u *MessageUsecase) SendMediaMessage(ctx context.Context, tenantID string, req domain.SendMediaMessageRequest) (*domain.SendMessageResponse, error) {
 	mediaType := strings.ToLower(strings.TrimSpace(req.Type))
 	if mediaType != "image" && mediaType != "video" && mediaType != "audio" && mediaType != "document" {
 		return nil, fmt.Errorf("%w: invalid media type", domain.ErrBadRequest)
@@ -183,6 +271,12 @@ func (u *MessageUsecase) SendMediaMessage(ctx context.Context, tenantID string, 
 	if err := u.billing.CheckLimit(ctx, tenantID); err != nil {
 		return nil, err
 	}
+
+	resolvedPhone, err := u.resolveSingleRecipient(ctx, tenantID, req.Phone)
+	if err != nil {
+		return nil, err
+	}
+	req.Phone = resolvedPhone
 
 	enriched, err := enrichMediaRequest(ctx, req)
 	if err != nil {
@@ -230,6 +324,61 @@ func (u *MessageUsecase) SendMediaMessage(ctx context.Context, tenantID string, 
 		MessageID: msg.ID,
 		Status:    msg.Status,
 	}, nil
+}
+
+func (u *MessageUsecase) resolveSingleRecipient(ctx context.Context, tenantID, rawPhone string) (string, error) {
+	normalized, err := normalizePhone(rawPhone)
+	if err != nil {
+		return "", err
+	}
+
+	contacts, err := u.whatsapp.ResolveContacts(ctx, tenantID, []string{normalized})
+	if err != nil {
+		return "", err
+	}
+	if len(contacts) == 0 {
+		return "", fmt.Errorf("%w: phone could not be resolved on WhatsApp", domain.ErrInvalidPhone)
+	}
+	resolved := contacts[0]
+	if !resolved.IsWhatsApp {
+		return "", fmt.Errorf("%w: phone is not registered on WhatsApp", domain.ErrInvalidPhone)
+	}
+	if resolved.Phone == "" {
+		return normalized, nil
+	}
+	return resolved.Phone, nil
+}
+
+func normalizePhoneInputs(inputs []string) ([]string, map[string]string, error) {
+	if len(inputs) == 0 {
+		return nil, nil, fmt.Errorf("%w: at least one phone is required", domain.ErrBadRequest)
+	}
+	normalized := make([]string, 0, len(inputs))
+	originalByNormalized := make(map[string]string, len(inputs))
+	for _, raw := range inputs {
+		phone, err := normalizePhone(raw)
+		if err != nil {
+			return nil, nil, err
+		}
+		if _, ok := originalByNormalized[phone]; ok {
+			continue
+		}
+		normalized = append(normalized, phone)
+		originalByNormalized[phone] = strings.TrimSpace(raw)
+	}
+	return normalized, originalByNormalized, nil
+}
+
+func normalizePhone(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", domain.ErrInvalidPhone
+	}
+	digits := nonDigitPattern.ReplaceAllString(trimmed, "")
+	if !phoneRegex.MatchString(digits) {
+		return "", domain.ErrInvalidPhone
+	}
+	return digits, nil
 }
 
 func enrichMediaRequest(ctx context.Context, req domain.SendMediaMessageRequest) (domain.SendMediaMessageRequest, error) {

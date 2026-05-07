@@ -80,6 +80,57 @@ func (h *MessageHandler) SendMedia(w http.ResponseWriter, r *http.Request) {
 	httputil.JSON(w, http.StatusOK, resp)
 }
 
+func (h *MessageHandler) ResolveContacts(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.TenantFromCtx(r.Context())
+	if tenantID == "" {
+		httputil.Error(w, http.StatusUnauthorized, "missing tenant context")
+		return
+	}
+
+	var req domain.ResolveContactsRequest
+	if err := httputil.Decode(r, &req); err != nil {
+		httputil.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	resp, err := h.msgUC.ResolveContacts(r.Context(), tenantID, req)
+	if err != nil {
+		httputil.DomainError(w, err)
+		return
+	}
+	h.log.WithContext(r.Context()).Audit("contacts.resolve", map[string]interface{}{
+		"count": len(resp),
+	})
+	httputil.JSON(w, http.StatusOK, resp)
+}
+
+func (h *MessageHandler) SendBulk(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.TenantFromCtx(r.Context())
+	if tenantID == "" {
+		httputil.Error(w, http.StatusUnauthorized, "missing tenant context")
+		return
+	}
+
+	var req domain.BulkSendMessageRequest
+	if err := httputil.Decode(r, &req); err != nil {
+		httputil.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	resp, err := h.msgUC.SendBulkMessage(r.Context(), tenantID, req)
+	if err != nil {
+		httputil.DomainError(w, err)
+		return
+	}
+	h.log.WithContext(r.Context()).Audit("message.send_bulk", map[string]interface{}{
+		"total":    resp.Total,
+		"accepted": resp.Accepted,
+		"sent":     resp.Sent,
+		"failed":   resp.Failed,
+	})
+	httputil.JSON(w, http.StatusOK, resp)
+}
+
 func (h *MessageHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.TenantFromCtx(r.Context())
 	if tenantID == "" {

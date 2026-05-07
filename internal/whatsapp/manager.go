@@ -243,6 +243,57 @@ func (m *Manager) SendMediaMessage(ctx context.Context, tenantID string, req dom
 	return resp.ID, nil
 }
 
+func (m *Manager) ResolveContacts(ctx context.Context, tenantID string, phones []string) ([]domain.ResolvedContact, error) {
+	sess, err := m.ensureSession(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if !sess.client.IsConnected() {
+		return nil, domain.ErrSessionNotConnected
+	}
+	if len(phones) == 0 {
+		return []domain.ResolvedContact{}, nil
+	}
+
+	lookupPhones := make([]string, 0, len(phones))
+	indexByLookup := make(map[string]int, len(phones))
+	for _, phone := range phones {
+		lookup := phone
+		if !strings.HasPrefix(lookup, "+") {
+			lookup = "+" + lookup
+		}
+		if _, ok := indexByLookup[lookup]; ok {
+			continue
+		}
+		indexByLookup[lookup] = len(lookupPhones)
+		lookupPhones = append(lookupPhones, lookup)
+	}
+
+	responses, err := sess.client.IsOnWhatsApp(ctx, lookupPhones)
+	if err != nil {
+		return nil, fmt.Errorf("resolve contacts: %w", err)
+	}
+
+	recognized := make([]domain.ResolvedContact, 0, len(responses))
+	for _, item := range responses {
+		contact := domain.ResolvedContact{
+			LookupPhone: item.Query,
+			Phone:       strings.TrimSpace(item.JID.User),
+			JID:         item.JID.String(),
+			IsWhatsApp:  item.IsIn,
+		}
+		if item.VerifiedName != nil && item.VerifiedName.Details != nil {
+			contact.VerifiedName = strings.TrimSpace(item.VerifiedName.Details.GetVerifiedName())
+		}
+		if !contact.IsWhatsApp {
+			contact.Error = "phone is not registered on WhatsApp"
+		}
+		recognized = append(recognized, contact)
+	}
+
+	return recognized, nil
+}
+
 func (m *Manager) DownloadMedia(ctx context.Context, tenantID string, msg *domain.Message) (*domain.MediaDownload, error) {
 	sess, err := m.ensureSession(ctx, tenantID)
 	if err != nil {

@@ -235,6 +235,42 @@ type SendMessageRequest struct {
 	Message string `json:"message"`
 }
 
+type ResolveContactsRequest struct {
+	Phones []string `json:"phones"`
+}
+
+type ResolvedContact struct {
+	InputPhone   string `json:"input_phone"`
+	LookupPhone  string `json:"lookup_phone"`
+	Phone        string `json:"phone"`
+	JID          string `json:"jid,omitempty"`
+	IsWhatsApp   bool   `json:"is_whatsapp"`
+	VerifiedName string `json:"verified_name,omitempty"`
+	Error        string `json:"error,omitempty"`
+}
+
+type BulkSendMessageRequest struct {
+	Phones  []string `json:"phones"`
+	Message string   `json:"message"`
+}
+
+type BulkSendMessageItem struct {
+	InputPhone string        `json:"input_phone"`
+	Phone      string        `json:"phone,omitempty"`
+	IsWhatsApp bool          `json:"is_whatsapp"`
+	MessageID  string        `json:"message_id,omitempty"`
+	Status     MessageStatus `json:"status,omitempty"`
+	Error      string        `json:"error,omitempty"`
+}
+
+type BulkSendMessageResponse struct {
+	Total    int                   `json:"total"`
+	Accepted int                   `json:"accepted"`
+	Sent     int                   `json:"sent"`
+	Failed   int                   `json:"failed"`
+	Results  []BulkSendMessageItem `json:"results"`
+}
+
 type SendMediaMessageRequest struct {
 	Phone    string `json:"phone"`
 	Type     string `json:"type"`
