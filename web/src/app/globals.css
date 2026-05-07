@@ -39,20 +39,43 @@ h4 {
     @apply text-sm font-semibold uppercase tracking-[0.28em] text-slate-400;
   }
 
+  .panel-subtitle {
+    @apply mt-2 text-sm leading-6 text-slate-400;
+  }
+
+  .stack-scroll {
+    @apply space-y-3 overflow-y-auto pr-1;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(79, 209, 255, 0.35) transparent;
+  }
+
+  .stack-scroll::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .stack-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .stack-scroll::-webkit-scrollbar-thumb {
+    background: rgba(79, 209, 255, 0.28);
+    border-radius: 9999px;
+  }
+
   .input {
-    @apply h-11 w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 text-sm text-white outline-none transition focus:border-glow focus:ring-2 focus:ring-glow/20;
+    @apply h-11 min-w-0 w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 text-sm text-white outline-none transition focus:border-glow focus:ring-2 focus:ring-glow/20;
   }
 
   .button-primary {
-    @apply inline-flex items-center justify-center rounded-2xl bg-glow px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex min-h-11 max-w-full items-center justify-center rounded-2xl bg-glow px-4 py-2.5 text-center text-sm font-semibold text-slate-950 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .button-secondary {
-    @apply inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-white/10;
+    @apply inline-flex min-h-11 max-w-full items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-white/10;
   }
 
   .button-danger {
-    @apply inline-flex items-center justify-center rounded-2xl border border-danger/40 bg-danger/10 px-4 py-2.5 text-sm font-semibold text-danger transition hover:bg-danger/20;
+    @apply inline-flex min-h-11 max-w-full items-center justify-center rounded-2xl border border-danger/40 bg-danger/10 px-4 py-2.5 text-center text-sm font-semibold text-danger transition hover:bg-danger/20;
   }
 
   .badge {

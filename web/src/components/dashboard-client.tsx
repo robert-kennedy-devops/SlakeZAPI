@@ -713,57 +713,71 @@ export function DashboardClient() {
     >
       <div className="grid-background absolute inset-0 opacity-35" />
       <div className="relative mx-auto flex max-w-7xl flex-col gap-6">
-        <header className="panel flex flex-col gap-5 p-6 lg:flex-row lg:items-center lg:justify-between">
-          <div>
+        <header className="panel p-6">
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(340px,0.9fr)]">
+          <div className="min-w-0">
             <p className="panel-title">Workspace Control Surface</p>
             <h1 className="mt-2 text-3xl font-bold text-white">
               {summaryQuery.data?.tenant?.name ??
                 currentUser?.tenant?.name ??
                 "Console"}
             </h1>
-            <p className="mt-2 text-sm text-slate-400">
+            <p className="panel-subtitle">
               Operando como{" "}
               <span className="text-white">{currentUser?.user.name}</span> •{" "}
               {ROLE_LABELS[currentMembership?.role ?? "viewer"]}
             </p>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <span className="badge">
+                tenant {tenantHeader ? tenantHeader.slice(0, 8) : "n/a"}
+              </span>
+              <span className="badge">
+                instancia {instanceHeader ? instanceHeader.slice(0, 8) : "n/a"}
+              </span>
+              <span className="badge">
+                {statusQuery.data?.status ?? "disconnected"}
+              </span>
+            </div>
           </div>
-          <div className="flex flex-col gap-3 lg:items-end">
-            <select
-              className="input min-w-64"
-              value={tenantHeader}
-              onChange={(event) =>
-                startTransition(() => {
-                  setTenant(event.target.value);
-                  setSelectedTenantID(event.target.value);
-                })
-              }
-            >
-              {currentUser?.memberships.map((membership) => (
-                <option key={membership.id} value={membership.tenant_id}>
-                  {membership.tenant_id} • {ROLE_LABELS[membership.role]}
-                </option>
-              ))}
-            </select>
-            <select
-              className="input min-w-64"
-              value={instanceHeader}
-              onChange={(event) => setSelectedInstanceID(event.target.value)}
-            >
-              {instancesQuery.data?.map((instance) => (
-                <option key={instance.id} value={instance.id}>
-                  {instance.name} • {instance.phone || instance.status}
-                </option>
-              ))}
-            </select>
-            <div className="flex gap-3">
+          <div className="rounded-3xl border border-white/10 bg-slate-950/45 p-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <select
+                className="input"
+                value={tenantHeader}
+                onChange={(event) =>
+                  startTransition(() => {
+                    setTenant(event.target.value);
+                    setSelectedTenantID(event.target.value);
+                  })
+                }
+              >
+                {currentUser?.memberships.map((membership) => (
+                  <option key={membership.id} value={membership.tenant_id}>
+                    {membership.tenant_id} • {ROLE_LABELS[membership.role]}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="input"
+                value={instanceHeader}
+                onChange={(event) => setSelectedInstanceID(event.target.value)}
+              >
+                {instancesQuery.data?.map((instance) => (
+                  <option key={instance.id} value={instance.id}>
+                    {instance.name} • {instance.phone || instance.status}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="mt-3 flex flex-col gap-3 sm:flex-row">
               <input
-                className="input min-w-64"
+                className="input"
                 placeholder="Nome da nova instancia"
                 value={instanceName}
                 onChange={(event) => setInstanceName(event.target.value)}
               />
               <button
-                className="button-secondary"
+                className="button-secondary sm:min-w-48"
                 disabled={createInstance.isPending || !instanceName.trim()}
                 onClick={() => createInstance.mutate()}
                 type="button"
@@ -772,7 +786,7 @@ export function DashboardClient() {
                 Criar instancia
               </button>
             </div>
-            <div className="flex gap-3">
+            <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:justify-end">
               <button
                 className="button-secondary"
                 onClick={() =>
@@ -788,6 +802,7 @@ export function DashboardClient() {
                 Sair
               </button>
             </div>
+          </div>
           </div>
         </header>
 
@@ -1030,7 +1045,7 @@ export function DashboardClient() {
               </FormPanel>
             </div>
 
-            <div className="grid gap-6 xl:grid-cols-3">
+            <div className="grid gap-6 xl:grid-cols-2 2xl:grid-cols-3">
               <FormPanel
                 title="Mensagens Interativas"
                 icon={<SquareMousePointer className="h-4 w-4" />}
@@ -1286,7 +1301,7 @@ export function DashboardClient() {
                   {groupsQuery.data?.slice(0, 5).map((group) => (
                     <button
                       key={group.jid}
-                      className="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-left text-sm text-slate-300"
+                      className="flex w-full items-start justify-between gap-3 rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-left text-sm text-slate-300"
                       onClick={() =>
                         setGroupForm((current) => ({
                           ...current,
@@ -1295,8 +1310,8 @@ export function DashboardClient() {
                       }
                       type="button"
                     >
-                      <span>{group.name}</span>
-                      <span className="text-xs text-slate-500">
+                      <span className="min-w-0 flex-1 break-words">{group.name}</span>
+                      <span className="shrink-0 text-right text-xs text-slate-500">
                         {group.participant_count} membros
                       </span>
                     </button>
@@ -1323,7 +1338,7 @@ export function DashboardClient() {
                   <h2 className="mt-2 text-xl font-semibold text-white">
                     Selecionar contatos e enviar em massa
                   </h2>
-                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
+                  <p className="panel-subtitle max-w-2xl">
                     Cole uma lista de numeros com DDI. O backend valida quais
                     existem no WhatsApp e voce pode selecionar varios para
                     disparo em lote.
@@ -1418,7 +1433,7 @@ export function DashboardClient() {
                     </button>
                   </div>
 
-                  <div className="space-y-3">
+                  <div className="stack-scroll max-h-[32rem]">
                     {resolvedContacts.length ? (
                       resolvedContacts.map((contact) => {
                         const checked = selectedBulkPhones.includes(
@@ -1488,7 +1503,7 @@ export function DashboardClient() {
                 ) : null}
               </div>
               <div className="mt-6 grid gap-6 xl:grid-cols-[0.92fr_1.08fr]">
-                <div className="space-y-3">
+                <div className="stack-scroll max-h-[42rem]">
                   {conversationsQuery.data?.length ? (
                     conversationsQuery.data.slice(0, 8).map((conversation) => {
                       const draft = conversationDrafts[conversation.phone] ?? {
@@ -1575,7 +1590,7 @@ export function DashboardClient() {
                   )}
                 </div>
 
-                <div className="space-y-3">
+                <div className="stack-scroll max-h-[42rem]">
                 {messagesQuery.data?.length ? (
                   messagesQuery.data.slice(0, 12).map((message) => (
                     <div
@@ -1654,7 +1669,7 @@ export function DashboardClient() {
                   value={String(queueQuery.data?.workers ?? 0)}
                 />
               </div>
-              <div className="space-y-3">
+              <div className="stack-scroll max-h-[20rem]">
                 {(queueQuery.data?.recent ?? []).slice(0, 8).map((job) => (
                   <div
                     key={`${job.id}-${job.status}-${job.updated_at}`}
@@ -1680,8 +1695,9 @@ export function DashboardClient() {
                   <EmptyState label="Fila sem atividade recente." />
                 ) : null}
               </div>
-              <div className="mt-4 space-y-3">
+              <div className="mt-4">
                 <p className="text-sm font-semibold text-white">DLQ operacional</p>
+                <div className="stack-scroll mt-3 max-h-[20rem]">
                 {queueDeadLettersQuery.data?.length ? (
                   queueDeadLettersQuery.data.slice(0, 8).map((job) => (
                     <div
@@ -1713,6 +1729,7 @@ export function DashboardClient() {
                 ) : (
                   <EmptyState label="Nenhum job em dead-letter." />
                 )}
+                </div>
               </div>
             </FormPanel>
 
@@ -1768,7 +1785,7 @@ export function DashboardClient() {
                   }))
                 }
               />
-              <div className="space-y-3">
+              <div className="stack-scroll max-h-[24rem]">
                 {campaignsQuery.data?.length ? (
                   campaignsQuery.data.map((campaign) => (
                     <div
@@ -1844,7 +1861,7 @@ export function DashboardClient() {
                   }))
                 }
               />
-              <div className="space-y-3">
+              <div className="stack-scroll max-h-[20rem]">
                 {webhooksQuery.data?.length ? (
                   webhooksQuery.data.map((webhook) => (
                     <div
@@ -1887,10 +1904,11 @@ export function DashboardClient() {
                   <EmptyState label="Sem webhooks registrados." />
                 )}
               </div>
-              <div className="mt-4 space-y-3">
+              <div className="mt-4">
                 <p className="text-sm font-semibold text-white">
                   Entregas recentes
                 </p>
+                <div className="stack-scroll mt-3 max-h-[22rem]">
                 {webhookDeliveriesQuery.data?.length ? (
                   webhookDeliveriesQuery.data.slice(0, 8).map((delivery) => (
                     <div
@@ -1934,6 +1952,7 @@ export function DashboardClient() {
                 ) : (
                   <EmptyState label="Sem histórico de entregas ainda." />
                 )}
+                </div>
               </div>
             </FormPanel>
 
@@ -2014,7 +2033,7 @@ export function DashboardClient() {
                   </div>
                 </div>
               ) : null}
-              <div className="space-y-3">
+              <div className="stack-scroll max-h-[20rem]">
                 {apiKeysQuery.data?.length ? (
                   apiKeysQuery.data.map((key) => (
                     <div
@@ -2073,7 +2092,7 @@ export function DashboardClient() {
                 </button>
               }
             >
-              <div className="space-y-3">
+              <div className="stack-scroll max-h-[22rem]">
                 {auditQuery.data?.length ? (
                   auditQuery.data.slice(0, 10).map((item) => (
                     <div
@@ -2147,7 +2166,7 @@ export function DashboardClient() {
                 <option value="admin">Admin</option>
                 <option value="owner">Owner</option>
               </select>
-              <div className="space-y-3">
+              <div className="stack-scroll max-h-[22rem]">
                 {membersQuery.data?.length ? (
                   membersQuery.data.map((member) => (
                     <MemberRow
@@ -2225,15 +2244,17 @@ function MetricCard({
   hint: string;
 }) {
   return (
-    <div className="panel p-5">
-      <div className="flex items-center justify-between">
-        <span className="panel-title">{label}</span>
-        <div className="rounded-2xl border border-glow/20 bg-glow/10 p-2 text-glow">
+    <div className="panel h-full p-5">
+      <div className="flex items-start justify-between gap-4">
+        <span className="panel-title max-w-[70%] break-words">{label}</span>
+        <div className="shrink-0 rounded-2xl border border-glow/20 bg-glow/10 p-2 text-glow">
           {icon}
         </div>
       </div>
-      <p className="mt-5 text-2xl font-bold text-white">{value}</p>
-      <p className="mt-2 text-sm text-slate-400">{hint}</p>
+      <div className="mt-5 flex min-h-24 flex-col justify-between gap-3">
+        <p className="text-2xl font-bold text-white">{value}</p>
+        <p className="text-sm leading-6 text-slate-400">{hint}</p>
+      </div>
     </div>
   );
 }
@@ -2250,17 +2271,19 @@ function FormPanel({
   children: ReactNode;
 }) {
   return (
-    <div className="panel p-6">
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-2 text-glow">
+    <div className="panel overflow-hidden p-6">
+      <div className="flex flex-col gap-4">
+        <div className="min-w-0 flex items-start gap-3">
+          <div className="shrink-0 rounded-2xl border border-white/10 bg-white/5 p-2 text-glow">
             {icon}
           </div>
-          <div>
-            <p className="panel-title">{title}</p>
+          <div className="min-w-0">
+            <p className="panel-title break-words">{title}</p>
           </div>
         </div>
-        {action}
+        <div className="flex w-full justify-start sm:justify-end [&>*]:w-full sm:[&>*]:w-auto sm:[&>*]:max-w-full">
+          {action}
+        </div>
       </div>
       <div className="mt-5 space-y-3">{children}</div>
     </div>
