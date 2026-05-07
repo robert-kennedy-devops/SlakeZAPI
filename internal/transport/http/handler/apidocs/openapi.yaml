@@ -1,0 +1,209 @@
+openapi: 3.1.0
+info:
+  title: SlakeZAPI
+  version: 1.0.0
+  description: API de multi-instancia WhatsApp com dashboard, campanhas, webhooks e observabilidade.
+servers:
+  - url: http://localhost:8080
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: APIKey or App Access Token
+paths:
+  /auth/bootstrap:
+    post:
+      summary: Cria tenant inicial e primeira API key
+      security: []
+      requestBody:
+        required: true
+      responses:
+        "201":
+          description: Tenant criado
+  /app/auth/signup:
+    post:
+      summary: Cria usuario e workspace inicial
+      security: []
+      responses:
+        "201":
+          description: Sessao criada
+  /app/instances:
+    get:
+      summary: Lista instancias do tenant
+      parameters:
+        - in: header
+          name: X-Tenant-ID
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Lista de instancias
+    post:
+      summary: Cria uma instancia
+      parameters:
+        - in: header
+          name: X-Tenant-ID
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: Instancia criada
+  /app/whatsapp/connect:
+    post:
+      summary: Inicia pareamento e retorna QR
+      parameters:
+        - in: header
+          name: X-Tenant-ID
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-Instance-ID
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Estado da sessao
+  /app/messages/send:
+    post:
+      summary: Envia mensagem de texto
+      parameters:
+        - in: header
+          name: X-Tenant-ID
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-Instance-ID
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Mensagem enviada
+  /app/messages/send-media:
+    post:
+      summary: Envia midia por URL
+      parameters:
+        - in: header
+          name: X-Tenant-ID
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Midia enviada
+  /app/messages/send-interactive:
+    post:
+      summary: Envia botoes, lista ou enquete
+      responses:
+        "200":
+          description: Interacao enviada
+  /app/messages/send-group:
+    post:
+      summary: Envia mensagem para grupo
+      responses:
+        "200":
+          description: Mensagem enviada
+  /app/status/post:
+    post:
+      summary: Publica texto ou midia no status
+      responses:
+        "200":
+          description: Status publicado
+  /app/contacts/resolve:
+    post:
+      summary: Resolve contatos no WhatsApp
+      responses:
+        "200":
+          description: Contatos resolvidos
+  /app/messages:
+    get:
+      summary: Lista mensagens
+      responses:
+        "200":
+          description: Feed de mensagens
+  /app/conversations:
+    get:
+      summary: Lista conversas operacionais
+      responses:
+        "200":
+          description: Lista de conversas
+  /app/conversations/{phone}:
+    post:
+      summary: Atualiza estado e nota de uma conversa
+      parameters:
+        - in: path
+          name: phone
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Conversa atualizada
+  /app/groups:
+    get:
+      summary: Lista grupos da instancia conectada
+      responses:
+        "200":
+          description: Lista de grupos
+  /app/campaigns:
+    get:
+      summary: Lista campanhas
+      responses:
+        "200":
+          description: Lista de campanhas
+    post:
+      summary: Cria campanha
+      responses:
+        "201":
+          description: Campanha criada
+  /app/campaigns/{id}/run:
+    post:
+      summary: Executa campanha manualmente
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Campanha iniciada
+  /app/webhooks:
+    get:
+      summary: Lista webhooks
+      responses:
+        "200":
+          description: Lista de webhooks
+    post:
+      summary: Registra webhook
+      responses:
+        "201":
+          description: Webhook criado
+  /app/queue:
+    get:
+      summary: Snapshot da fila interna
+      responses:
+        "200":
+          description: Estado da fila
+  /docs/openapi.yaml:
+    get:
+      summary: OpenAPI desta API
+      security: []
+      responses:
+        "200":
+          description: Documento YAML
+  /docs/postman_collection.json:
+    get:
+      summary: Colecao Postman
+      security: []
+      responses:
+        "200":
+          description: Documento JSON

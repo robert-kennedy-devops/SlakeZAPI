@@ -20,22 +20,22 @@ func NewWebhookRepository(db *sql.DB) domain.WebhookRepository {
 
 func (r *webhookRepo) Create(ctx context.Context, wh *domain.Webhook) error {
 	q := `
-		INSERT INTO webhooks (id, tenant_id, url, events, secret, active, created_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7)
+		INSERT INTO webhooks (id, tenant_id, instance_id, url, events, secret, active, created_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
 	`
 	events := strings.Join(wh.Events, ",")
 	_, err := r.db.ExecContext(ctx, q,
-		wh.ID, wh.TenantID, wh.URL, events, wh.Secret, wh.Active, wh.CreatedAt)
+		wh.ID, wh.TenantID, nullableString(wh.InstanceID), wh.URL, events, wh.Secret, wh.Active, wh.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("webhookRepo.Create: %w", err)
 	}
 	return nil
 }
 
-func (r *webhookRepo) GetByTenant(ctx context.Context, tenantID string) ([]domain.Webhook, error) {
-	q := `SELECT id, tenant_id, url, events, secret, active, created_at
-	      FROM webhooks WHERE tenant_id = $1 AND active = true`
-	rows, err := r.db.QueryContext(ctx, q, tenantID)
+func (r *webhookRepo) GetByTenant(ctx context.Context, tenantID, instanceID string) ([]domain.Webhook, error) {
+	q := `SELECT id, tenant_id, instance_id, url, events, secret, active, created_at
+	      FROM webhooks WHERE tenant_id = $1 AND active = true AND ($2 = '' OR COALESCE(instance_id, '') = $2)`
+	rows, err := r.db.QueryContext(ctx, q, tenantID, instanceID)
 	if err != nil {
 		return nil, fmt.Errorf("webhookRepo.GetByTenant: %w", err)
 	}
@@ -45,9 +45,11 @@ func (r *webhookRepo) GetByTenant(ctx context.Context, tenantID string) ([]domai
 	for rows.Next() {
 		wh := domain.Webhook{}
 		var events string
-		if err := rows.Scan(&wh.ID, &wh.TenantID, &wh.URL, &events, &wh.Secret, &wh.Active, &wh.CreatedAt); err != nil {
+		var dbInstanceID sql.NullString
+		if err := rows.Scan(&wh.ID, &wh.TenantID, &dbInstanceID, &wh.URL, &events, &wh.Secret, &wh.Active, &wh.CreatedAt); err != nil {
 			return nil, err
 		}
+		wh.InstanceID = dbInstanceID.String
 		wh.Events = strings.Split(events, ",")
 		out = append(out, wh)
 	}

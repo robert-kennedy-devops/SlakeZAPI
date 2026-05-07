@@ -14,6 +14,57 @@ type Tenant struct {
 	Active    bool      `json:"active"`
 }
 
+// ─── Users ──────────────────────────────────────────────────────────────────
+
+type User struct {
+	ID           string    `json:"id"`
+	Email        string    `json:"email"`
+	Name         string    `json:"name"`
+	PasswordHash string    `json:"-"`
+	Active       bool      `json:"active"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+type UserRole string
+
+const (
+	UserRoleOwner    UserRole = "owner"
+	UserRoleAdmin    UserRole = "admin"
+	UserRoleOperator UserRole = "operator"
+	UserRoleViewer   UserRole = "viewer"
+)
+
+type TenantUser struct {
+	ID        string    `json:"id"`
+	TenantID  string    `json:"tenant_id"`
+	UserID    string    `json:"user_id"`
+	Role      UserRole  `json:"role"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type TenantMember struct {
+	ID        string    `json:"id"`
+	TenantID  string    `json:"tenant_id"`
+	UserID    string    `json:"user_id"`
+	Email     string    `json:"email"`
+	Name      string    `json:"name"`
+	Role      UserRole  `json:"role"`
+	Active    bool      `json:"active"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type UserSession struct {
+	ID               string    `json:"id"`
+	UserID           string    `json:"user_id"`
+	TokenHash        string    `json:"-"`
+	RefreshTokenHash string    `json:"-"`
+	ExpiresAt        time.Time `json:"expires_at"`
+	RefreshExpiresAt time.Time `json:"refresh_expires_at"`
+	CreatedAt        time.Time `json:"created_at"`
+	LastUsedAt       time.Time `json:"last_used_at"`
+}
+
 // ─── APIKey ─────────────────────────────────────────────────────────────────
 
 type APIKey struct {
@@ -85,6 +136,19 @@ type Usage struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// ─── Instances ──────────────────────────────────────────────────────────────
+
+type Instance struct {
+	ID        string        `json:"id"`
+	TenantID  string        `json:"tenant_id"`
+	Name      string        `json:"name"`
+	Phone     string        `json:"phone,omitempty"`
+	Status    SessionStatus `json:"status"`
+	IsDefault bool          `json:"is_default"`
+	CreatedAt time.Time     `json:"created_at"`
+	UpdatedAt time.Time     `json:"updated_at"`
+}
+
 // ─── Message ─────────────────────────────────────────────────────────────────
 
 type MessageStatus string
@@ -97,9 +161,18 @@ const (
 	MessageStatusFailed    MessageStatus = "failed"
 )
 
+type ConversationState string
+
+const (
+	ConversationStateOpen     ConversationState = "open"
+	ConversationStatePending  ConversationState = "pending"
+	ConversationStateResolved ConversationState = "resolved"
+)
+
 type Message struct {
 	ID            string        `json:"id"`
 	TenantID      string        `json:"tenant_id"`
+	InstanceID    string        `json:"instance_id,omitempty"`
 	WhatsAppID    string        `json:"whatsapp_id"`
 	Phone         string        `json:"phone"`
 	Body          string        `json:"body"`
@@ -118,16 +191,63 @@ type Message struct {
 	CreatedAt     time.Time     `json:"created_at"`
 }
 
+type Conversation struct {
+	ID              string            `json:"id"`
+	TenantID        string            `json:"tenant_id"`
+	InstanceID      string            `json:"instance_id"`
+	Phone           string            `json:"phone"`
+	LastMessageID   string            `json:"last_message_id,omitempty"`
+	LastMessageBody string            `json:"last_message_body,omitempty"`
+	LastDirection   string            `json:"last_direction,omitempty"`
+	LastAt          time.Time         `json:"last_at"`
+	State           ConversationState `json:"state"`
+	AssignedUserID  string            `json:"assigned_user_id,omitempty"`
+	AssignedName    string            `json:"assigned_name,omitempty"`
+	Note            string            `json:"note,omitempty"`
+	UnreadCount     int               `json:"unread_count"`
+	CreatedAt       time.Time         `json:"created_at"`
+	UpdatedAt       time.Time         `json:"updated_at"`
+}
+
+type QueueJobView struct {
+	ID        string    `json:"id"`
+	Kind      string    `json:"kind"`
+	Attempt   int       `json:"attempt"`
+	Status    string    `json:"status"`
+	Error     string    `json:"error,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type QueueSnapshot struct {
+	Jobs         int            `json:"jobs"`
+	DeadLetters  int            `json:"dead_letters"`
+	Workers      int            `json:"workers"`
+	Recent       []QueueJobView `json:"recent"`
+	DeadLettered []QueueJobView `json:"dead_lettered"`
+}
+
+type Group struct {
+	JID              string    `json:"jid"`
+	Name             string    `json:"name"`
+	Topic            string    `json:"topic,omitempty"`
+	ParticipantCount int       `json:"participant_count"`
+	IsAnnounce       bool      `json:"is_announce"`
+	IsLocked         bool      `json:"is_locked"`
+	CreatedAt        time.Time `json:"created_at"`
+}
+
 // ─── Webhook ─────────────────────────────────────────────────────────────────
 
 type Webhook struct {
-	ID        string    `json:"id"`
-	TenantID  string    `json:"tenant_id"`
-	URL       string    `json:"url"`
-	Events    []string  `json:"events"` // e.g. ["message.received", "message.sent"]
-	Secret    string    `json:"-"`
-	Active    bool      `json:"active"`
-	CreatedAt time.Time `json:"created_at"`
+	ID         string    `json:"id"`
+	TenantID   string    `json:"tenant_id"`
+	InstanceID string    `json:"instance_id,omitempty"`
+	URL        string    `json:"url"`
+	Events     []string  `json:"events"` // e.g. ["message.received", "message.sent"]
+	Secret     string    `json:"-"`
+	Active     bool      `json:"active"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 // ─── WhatsApp Session ────────────────────────────────────────────────────────
@@ -141,11 +261,15 @@ const (
 )
 
 type Session struct {
-	TenantID  string        `json:"tenant_id"`
-	DeviceJID string        `json:"-"`
-	Status    SessionStatus `json:"status"`
-	Phone     string        `json:"phone"`
-	UpdatedAt time.Time     `json:"updated_at"`
+	TenantID   string        `json:"tenant_id"`
+	InstanceID string        `json:"instance_id"`
+	DeviceJID  string        `json:"-"`
+	Status     SessionStatus `json:"status"`
+	Phone      string        `json:"phone"`
+	UpdatedAt  time.Time     `json:"updated_at"`
+	LastEvent  string        `json:"last_event,omitempty"`
+	LastError  string        `json:"last_error,omitempty"`
+	QRCode     string        `json:"qr_code,omitempty"`
 }
 
 // ─── Event ───────────────────────────────────────────────────────────────────
@@ -160,35 +284,130 @@ const (
 )
 
 type Event struct {
-	Type     EventType   `json:"type"`
-	TenantID string      `json:"tenant_id"`
-	Payload  interface{} `json:"payload"`
+	Type       EventType   `json:"type"`
+	TenantID   string      `json:"tenant_id"`
+	InstanceID string      `json:"instance_id,omitempty"`
+	Payload    interface{} `json:"payload"`
 }
 
 type WebhookEnvelope struct {
-	ID        string      `json:"id"`
-	Version   string      `json:"version"`
-	Type      EventType   `json:"type"`
-	TenantID  string      `json:"tenant_id"`
-	Timestamp time.Time   `json:"timestamp"`
-	Payload   interface{} `json:"payload"`
+	ID         string      `json:"id"`
+	Version    string      `json:"version"`
+	Type       EventType   `json:"type"`
+	TenantID   string      `json:"tenant_id"`
+	InstanceID string      `json:"instance_id,omitempty"`
+	Timestamp  time.Time   `json:"timestamp"`
+	Payload    interface{} `json:"payload"`
 }
 
 // ─── Request/Response DTOs ───────────────────────────────────────────────────
 
 type SendMessageRequest struct {
-	Phone   string `json:"phone"`
-	Message string `json:"message"`
+	InstanceID string `json:"instance_id,omitempty"`
+	Phone      string `json:"phone"`
+	Message    string `json:"message"`
+}
+
+type InteractiveMessageButton struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+}
+
+type InteractiveMessageListRow struct {
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	Description string `json:"description,omitempty"`
+}
+
+type InteractiveMessageListSection struct {
+	Title string                      `json:"title"`
+	Rows  []InteractiveMessageListRow `json:"rows"`
+}
+
+type InteractiveMessageRequest struct {
+	InstanceID string                          `json:"instance_id,omitempty"`
+	Phone      string                          `json:"phone"`
+	Type       string                          `json:"type"`
+	Header     string                          `json:"header,omitempty"`
+	Body       string                          `json:"body"`
+	Footer     string                          `json:"footer,omitempty"`
+	Buttons    []InteractiveMessageButton      `json:"buttons,omitempty"`
+	ButtonText string                          `json:"button_text,omitempty"`
+	Sections   []InteractiveMessageListSection `json:"sections,omitempty"`
+	Options    []string                        `json:"options,omitempty"`
+	MaxSelect  int                             `json:"max_select,omitempty"`
+}
+
+type GroupMessageRequest struct {
+	InstanceID string `json:"instance_id,omitempty"`
+	GroupJID   string `json:"group_jid"`
+	Message    string `json:"message"`
+}
+
+type StatusMessageRequest struct {
+	InstanceID string `json:"instance_id,omitempty"`
+	Type       string `json:"type"`
+	Message    string `json:"message,omitempty"`
+	URL        string `json:"url,omitempty"`
+	Caption    string `json:"caption,omitempty"`
+	FileName   string `json:"file_name,omitempty"`
+	MimeType   string `json:"mime_type,omitempty"`
+	Data       []byte `json:"-"`
+}
+
+type UpdateConversationRequest struct {
+	State          ConversationState `json:"state,omitempty"`
+	AssignedUserID string            `json:"assigned_user_id,omitempty"`
+	Note           string            `json:"note,omitempty"`
+}
+
+type ResolveContactsRequest struct {
+	InstanceID string   `json:"instance_id,omitempty"`
+	Phones     []string `json:"phones"`
+}
+
+type ResolvedContact struct {
+	InputPhone   string `json:"input_phone"`
+	LookupPhone  string `json:"lookup_phone"`
+	Phone        string `json:"phone"`
+	JID          string `json:"jid,omitempty"`
+	IsWhatsApp   bool   `json:"is_whatsapp"`
+	VerifiedName string `json:"verified_name,omitempty"`
+	Error        string `json:"error,omitempty"`
+}
+
+type BulkSendMessageRequest struct {
+	InstanceID string   `json:"instance_id,omitempty"`
+	Phones     []string `json:"phones"`
+	Message    string   `json:"message"`
+}
+
+type BulkSendMessageItem struct {
+	InputPhone string        `json:"input_phone"`
+	Phone      string        `json:"phone,omitempty"`
+	IsWhatsApp bool          `json:"is_whatsapp"`
+	MessageID  string        `json:"message_id,omitempty"`
+	Status     MessageStatus `json:"status,omitempty"`
+	Error      string        `json:"error,omitempty"`
+}
+
+type BulkSendMessageResponse struct {
+	Total    int                   `json:"total"`
+	Accepted int                   `json:"accepted"`
+	Sent     int                   `json:"sent"`
+	Failed   int                   `json:"failed"`
+	Results  []BulkSendMessageItem `json:"results"`
 }
 
 type SendMediaMessageRequest struct {
-	Phone    string `json:"phone"`
-	Type     string `json:"type"`
-	URL      string `json:"url"`
-	Caption  string `json:"caption,omitempty"`
-	FileName string `json:"file_name,omitempty"`
-	MimeType string `json:"mime_type,omitempty"`
-	Data     []byte `json:"-"`
+	InstanceID string `json:"instance_id,omitempty"`
+	Phone      string `json:"phone"`
+	Type       string `json:"type"`
+	URL        string `json:"url"`
+	Caption    string `json:"caption,omitempty"`
+	FileName   string `json:"file_name,omitempty"`
+	MimeType   string `json:"mime_type,omitempty"`
+	Data       []byte `json:"-"`
 }
 
 type SendMessageResponse struct {
@@ -213,10 +432,11 @@ type CreateAPIKeyResponse struct {
 }
 
 type TenantSummary struct {
-	Tenant  *Tenant       `json:"tenant"`
-	Session *Session      `json:"session,omitempty"`
-	Usage   *Usage        `json:"usage,omitempty"`
-	Plan    *Subscription `json:"plan,omitempty"`
+	Tenant    *Tenant       `json:"tenant"`
+	Session   *Session      `json:"session,omitempty"`
+	Instances []Instance    `json:"instances,omitempty"`
+	Usage     *Usage        `json:"usage,omitempty"`
+	Plan      *Subscription `json:"plan,omitempty"`
 }
 
 type BootstrapTenantRequest struct {
@@ -236,12 +456,121 @@ type ConnectRequest struct {
 }
 
 type ConnectResponse struct {
-	QRCode string `json:"qr_code"` // base64 PNG or text QR
-	Status string `json:"status"`
-	Phone  string `json:"phone,omitempty"`
+	InstanceID string `json:"instance_id,omitempty"`
+	QRCode     string `json:"qr_code,omitempty"` // raw QR payload from WhatsApp
+	QRPNGURL   string `json:"qr_png_url,omitempty"`
+	QRPageURL  string `json:"qr_page_url,omitempty"`
+	Status     string `json:"status"`
+	Phone      string `json:"phone,omitempty"`
+	LastError  string `json:"last_error,omitempty"`
 }
 
 type RegisterWebhookRequest struct {
-	URL    string   `json:"url"`
-	Events []string `json:"events"`
+	InstanceID string   `json:"instance_id,omitempty"`
+	URL        string   `json:"url"`
+	Events     []string `json:"events"`
+}
+
+type SignUpRequest struct {
+	Name       string   `json:"name"`
+	Email      string   `json:"email"`
+	Password   string   `json:"password"`
+	TenantName string   `json:"tenant_name"`
+	Plan       PlanName `json:"plan"`
+}
+
+type LoginRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+type AuthSessionResponse struct {
+	Token            string      `json:"token"`
+	ExpiresAt        time.Time   `json:"expires_at"`
+	RefreshExpiresAt time.Time   `json:"refresh_expires_at"`
+	User             *User       `json:"user"`
+	Tenant           *Tenant     `json:"tenant"`
+	Membership       *TenantUser `json:"membership"`
+}
+
+type CurrentUserResponse struct {
+	User        *User        `json:"user"`
+	Tenant      *Tenant      `json:"tenant"`
+	Membership  *TenantUser  `json:"membership"`
+	Memberships []TenantUser `json:"memberships,omitempty"`
+}
+
+type AddTenantMemberRequest struct {
+	Email string   `json:"email"`
+	Role  UserRole `json:"role"`
+}
+
+type UpdateTenantMemberRoleRequest struct {
+	Role UserRole `json:"role"`
+}
+
+// ─── Campaigns ──────────────────────────────────────────────────────────────
+
+type CampaignStatus string
+
+const (
+	CampaignStatusDraft     CampaignStatus = "draft"
+	CampaignStatusScheduled CampaignStatus = "scheduled"
+	CampaignStatusRunning   CampaignStatus = "running"
+	CampaignStatusCompleted CampaignStatus = "completed"
+	CampaignStatusFailed    CampaignStatus = "failed"
+	CampaignStatusCancelled CampaignStatus = "cancelled"
+)
+
+type Campaign struct {
+	ID             string         `json:"id"`
+	TenantID       string         `json:"tenant_id"`
+	InstanceID     string         `json:"instance_id"`
+	Name           string         `json:"name"`
+	Message        string         `json:"message"`
+	Status         CampaignStatus `json:"status"`
+	ScheduledAt    *time.Time     `json:"scheduled_at,omitempty"`
+	LastExecutedAt *time.Time     `json:"last_executed_at,omitempty"`
+	TotalContacts  int            `json:"total_contacts"`
+	SentCount      int            `json:"sent_count"`
+	FailedCount    int            `json:"failed_count"`
+	CreatedAt      time.Time      `json:"created_at"`
+	UpdatedAt      time.Time      `json:"updated_at"`
+}
+
+type CampaignRecipient struct {
+	ID         string        `json:"id"`
+	CampaignID string        `json:"campaign_id"`
+	InputPhone string        `json:"input_phone"`
+	Phone      string        `json:"phone,omitempty"`
+	Name       string        `json:"name,omitempty"`
+	Variables  string        `json:"variables,omitempty"`
+	MessageID  string        `json:"message_id,omitempty"`
+	Status     MessageStatus `json:"status"`
+	Error      string        `json:"error,omitempty"`
+	IsWhatsApp bool          `json:"is_whatsapp"`
+	CreatedAt  time.Time     `json:"created_at"`
+	UpdatedAt  time.Time     `json:"updated_at"`
+}
+
+type CreateInstanceRequest struct {
+	Name string `json:"name"`
+}
+
+type CreateCampaignRecipient struct {
+	Phone     string            `json:"phone"`
+	Name      string            `json:"name,omitempty"`
+	Variables map[string]string `json:"variables,omitempty"`
+}
+
+type CreateCampaignRequest struct {
+	InstanceID  string                    `json:"instance_id,omitempty"`
+	Name        string                    `json:"name"`
+	Message     string                    `json:"message"`
+	ScheduledAt *time.Time                `json:"scheduled_at,omitempty"`
+	Recipients  []CreateCampaignRecipient `json:"recipients"`
+}
+
+type UpdateCampaignStatusRequest struct {
+	Status CampaignStatus `json:"status"`
 }

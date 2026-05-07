@@ -26,6 +26,8 @@ type App struct {
 	server     *http.Server
 	pool       *queue.Pool
 	dispatcher *webhook.Dispatcher
+	campaigns  *usecase.CampaignUsecase
+	ops        *usecase.OperationsUsecase
 	metrics    *observability.Metrics
 	startedAt  time.Time
 	log        *logger.Logger
@@ -43,12 +45,17 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 
 	// ── Repositories ────────────────────────────────────────────────────────
 	tenantRepo := repository.NewTenantRepository(db)
+	userRepo := repository.NewUserRepository(db)
+	tenantUserRepo := repository.NewTenantUserRepository(db)
+	userSessionRepo := repository.NewUserSessionRepository(db)
 	apiKeyRepo := repository.NewAPIKeyRepository(db)
+	instanceRepo := repository.NewInstanceRepository(db)
 	msgRepo := repository.NewMessageRepository(db)
 	sessionRepo := repository.NewSessionRepository(db)
 	webhookRepo := repository.NewWebhookRepository(db)
 	subRepo := repository.NewSubscriptionRepository(db)
 	usageRepo := repository.NewUsageRepository(db)
+	campaignRepo := repository.NewCampaignRepository(db)
 
 	// ── Infrastructure ──────────────────────────────────────────────────────
 	eventBus := events.NewBus()
@@ -57,17 +64,24 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 
 	// ── Services ────────────────────────────────────────────────────────────
 	billingSvc := billing.NewService(usageRepo, subRepo, log)
-	waMgr, err := whatsapp.NewManager(db, eventBus, sessionRepo, msgRepo, billingSvc, log)
+	waMgr, err := whatsapp.NewManager(db, eventBus, instanceRepo, sessionRepo, msgRepo, billingSvc, log)
 	if err != nil {
 		return nil, fmt.Errorf("whatsapp manager: %w", err)
 	}
 
 	// ── Use Cases ───────────────────────────────────────────────────────────
-	authUC := usecase.NewAuthUsecase(apiKeyRepo, tenantRepo, subRepo, billingSvc, waMgr, cfg.APIKeySalt, log)
-	msgUC := usecase.NewMessageUsecase(msgRepo, waMgr, billingSvc, eventBus, log)
-	waUC := usecase.NewWhatsAppUsecase(waMgr, eventBus, log)
-	webhookUC := usecase.NewWebhookUsecase(webhookRepo, subRepo, log)
+	authUC := usecase.NewAuthUsecase(apiKeyRepo, tenantRepo, instanceRepo, subRepo, billingSvc, waMgr, cfg.APIKeySalt, log)
+	userAuthUC := usecase.NewUserAuthUsecase(
+		userRepo, tenantRepo, instanceRepo, tenantUserRepo, userSessionRepo, subRepo,
+		cfg.UserAccessTokenTTL, cfg.UserRefreshTokenTTL, log,
+	)
+	msgUC := usecase.NewMessageUsecase(msgRepo, instanceRepo, campaignRepo, waMgr, billingSvc, eventBus, log)
+	waUC := usecase.NewWhatsAppUsecase(waMgr, instanceRepo, eventBus, log)
+	instanceUC := usecase.NewInstanceUsecase(tenantRepo, instanceRepo, log)
+	webhookUC := usecase.NewWebhookUsecase(webhookRepo, instanceRepo, subRepo, log)
 	billingUC := usecase.NewBillingUsecase(billingSvc, log)
+	campaignUC := usecase.NewCampaignUsecase(campaignRepo, instanceRepo, msgUC, log)
+	opsUC := usecase.NewOperationsUsecase(workerPool)
 
 	// ── WebSocket Hub ────────────────────────────────────────────────────────
 	hub := ws.NewHub(eventBus, log)
@@ -82,8 +96,11 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 	// ── HTTP Router ──────────────────────────────────────────────────────────
 	router := transportHTTP.NewRouter(
 		db, workerPool,
-		authUC, msgUC, waUC, webhookUC, billingUC,
-		hub, metrics, startedAt, cfg.RateLimitRPS, log,
+		authUC, userAuthUC, msgUC, waUC, webhookUC, billingUC,
+		instanceUC, campaignUC,
+		opsUC,
+		hub, metrics, startedAt, cfg.RateLimitRPS, cfg.CORSAllowedOrigins,
+		cfg.UserSessionCookieName, cfg.UserSessionCookieSecure, cfg.UserSessionCookieDomain, cfg.UserSessionCookieSameSite, log,
 	)
 
 	server := &http.Server{
@@ -99,6 +116,8 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 		server:     server,
 		pool:       workerPool,
 		dispatcher: dispatcher,
+		campaigns:  campaignUC,
+		ops:        opsUC,
 		metrics:    metrics,
 		startedAt:  startedAt,
 		log:        log,
@@ -111,6 +130,7 @@ func (a *App) Run(ctx context.Context) error {
 	// Start worker pool
 	a.pool.Start(ctx)
 	go a.dispatcher.Start(ctx)
+	go a.runCampaignScheduler(ctx)
 
 	// HTTP server in background
 	errCh := make(chan error, 1)
@@ -141,4 +161,20 @@ func (a *App) Run(ctx context.Context) error {
 	a.pool.Stop()
 	a.log.Info("server stopped")
 	return nil
+}
+
+func (a *App) runCampaignScheduler(ctx context.Context) {
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := a.campaigns.RunDue(ctx); err != nil {
+				a.log.Error("campaign scheduler failed", map[string]interface{}{"err": err.Error()})
+			}
+		}
+	}
 }

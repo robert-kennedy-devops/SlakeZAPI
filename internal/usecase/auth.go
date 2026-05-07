@@ -16,18 +16,20 @@ import (
 )
 
 type AuthUsecase struct {
-	apiKeyRepo domain.APIKeyRepository
-	tenantRepo domain.TenantRepository
-	subRepo    domain.SubscriptionRepository
-	billingSvc domain.BillingService
-	whatsapp   domain.WhatsAppService
-	salt       string
-	log        *logger.Logger
+	apiKeyRepo   domain.APIKeyRepository
+	tenantRepo   domain.TenantRepository
+	instanceRepo domain.InstanceRepository
+	subRepo      domain.SubscriptionRepository
+	billingSvc   domain.BillingService
+	whatsapp     domain.WhatsAppService
+	salt         string
+	log          *logger.Logger
 }
 
 func NewAuthUsecase(
 	apiKeyRepo domain.APIKeyRepository,
 	tenantRepo domain.TenantRepository,
+	instanceRepo domain.InstanceRepository,
 	subRepo domain.SubscriptionRepository,
 	billingSvc domain.BillingService,
 	whatsapp domain.WhatsAppService,
@@ -35,13 +37,14 @@ func NewAuthUsecase(
 	log *logger.Logger,
 ) *AuthUsecase {
 	return &AuthUsecase{
-		apiKeyRepo: apiKeyRepo,
-		tenantRepo: tenantRepo,
-		subRepo:    subRepo,
-		billingSvc: billingSvc,
-		whatsapp:   whatsapp,
-		salt:       salt,
-		log:        log,
+		apiKeyRepo:   apiKeyRepo,
+		tenantRepo:   tenantRepo,
+		instanceRepo: instanceRepo,
+		subRepo:      subRepo,
+		billingSvc:   billingSvc,
+		whatsapp:     whatsapp,
+		salt:         salt,
+		log:          log,
 	}
 }
 
@@ -81,6 +84,19 @@ func (u *AuthUsecase) BootstrapTenant(ctx context.Context, req domain.BootstrapT
 		CreatedAt: time.Now().UTC(),
 	}
 	if err := u.subRepo.Upsert(ctx, sub); err != nil {
+		return nil, err
+	}
+
+	instance := &domain.Instance{
+		ID:        uuid.NewString(),
+		TenantID:  tenant.ID,
+		Name:      "Principal",
+		Status:    domain.SessionStatusDisconnected,
+		IsDefault: true,
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}
+	if err := u.instanceRepo.Create(ctx, instance); err != nil {
 		return nil, err
 	}
 
@@ -191,8 +207,14 @@ func (u *AuthUsecase) GetTenantSummary(ctx context.Context, tenantID string) (*d
 	}
 
 	var session *domain.Session
-	if current, err := u.whatsapp.GetSession(ctx, tenantID); err == nil {
-		session = current
+	instances, err := u.instanceRepo.ListByTenant(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if len(instances) > 0 {
+		if current, err := u.whatsapp.GetSession(ctx, tenantID, instances[0].ID); err == nil {
+			session = current
+		}
 	}
 
 	usage, err := u.billingSvc.GetUsage(ctx, tenantID)
@@ -206,10 +228,11 @@ func (u *AuthUsecase) GetTenantSummary(ctx context.Context, tenantID string) (*d
 	}
 
 	return &domain.TenantSummary{
-		Tenant:  tenant,
-		Session: session,
-		Usage:   usage,
-		Plan:    sub,
+		Tenant:    tenant,
+		Session:   session,
+		Instances: instances,
+		Usage:     usage,
+		Plan:      sub,
 	}, nil
 }
 

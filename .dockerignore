@@ -1,0 +1,12 @@
+.git
+.gitignore
+.idea
+.vscode
+coverage.html
+*.out
+api
+data
+docker/postgres_data
+web/node_modules
+web/.next
+node_modules

@@ -6,12 +6,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/whatsapp-saas/api/internal/domain"
 	"github.com/whatsapp-saas/api/pkg/logger"
 )
 
 // Job represents a unit of work to be processed by the pool.
 type Job struct {
 	ID      string
+	Kind    string
 	Payload interface{}
 	Handler func(ctx context.Context, payload interface{}) error
 	Attempt int
@@ -25,6 +27,19 @@ type Pool struct {
 	maxRetries int
 	log        *logger.Logger
 	wg         sync.WaitGroup
+	historyMu  sync.Mutex
+	recent     []historyEntry
+	deadRecent []historyEntry
+}
+
+type historyEntry struct {
+	ID        string
+	Kind      string
+	Attempt   int
+	Status    string
+	Error     string
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // NewPool creates and starts a worker pool.
@@ -59,10 +74,15 @@ func (p *Pool) Stop() {
 
 // Enqueue submits a job. Returns false if the queue is full.
 func (p *Pool) Enqueue(job Job) bool {
+	if job.Kind == "" {
+		job.Kind = "generic"
+	}
+	p.track(job, "queued", "")
 	select {
 	case p.jobs <- job:
 		return true
 	default:
+		p.track(job, "dropped", "queue full")
 		p.log.Warn("queue full, dropping job", map[string]interface{}{"job_id": job.ID})
 		return false
 	}
@@ -70,6 +90,44 @@ func (p *Pool) Enqueue(job Job) bool {
 
 func (p *Pool) Stats() (jobs int, deadLetters int, workers int) {
 	return len(p.jobs), len(p.deadLetter), p.workerN
+}
+
+func (p *Pool) Snapshot() domain.QueueSnapshot {
+	p.historyMu.Lock()
+	defer p.historyMu.Unlock()
+
+	recent := make([]domain.QueueJobView, 0, len(p.recent))
+	for _, item := range p.recent {
+		recent = append(recent, domain.QueueJobView{
+			ID:        item.ID,
+			Kind:      item.Kind,
+			Attempt:   item.Attempt,
+			Status:    item.Status,
+			Error:     item.Error,
+			CreatedAt: item.CreatedAt,
+			UpdatedAt: item.UpdatedAt,
+		})
+	}
+	dead := make([]domain.QueueJobView, 0, len(p.deadRecent))
+	for _, item := range p.deadRecent {
+		dead = append(dead, domain.QueueJobView{
+			ID:        item.ID,
+			Kind:      item.Kind,
+			Attempt:   item.Attempt,
+			Status:    item.Status,
+			Error:     item.Error,
+			CreatedAt: item.CreatedAt,
+			UpdatedAt: item.UpdatedAt,
+		})
+	}
+	jobs, deadLetters, workers := p.Stats()
+	return domain.QueueSnapshot{
+		Jobs:         jobs,
+		DeadLetters:  deadLetters,
+		Workers:      workers,
+		Recent:       recent,
+		DeadLettered: dead,
+	}
 }
 
 // ─── internal ────────────────────────────────────────────────────────────────
@@ -83,13 +141,16 @@ func (p *Pool) worker(ctx context.Context, id int) {
 }
 
 func (p *Pool) process(ctx context.Context, job Job) {
+	p.track(job, "processing", "")
 	err := job.Handler(ctx, job.Payload)
 	if err == nil {
+		p.track(job, "done", "")
 		return
 	}
 
 	job.Attempt++
 	if job.Attempt >= p.maxRetries {
+		p.track(job, "dead-letter", err.Error())
 		p.log.Error("job moved to dead-letter", map[string]interface{}{
 			"job_id":  job.ID,
 			"attempt": job.Attempt,
@@ -111,10 +172,37 @@ func (p *Pool) process(ctx context.Context, job Job) {
 		"delay":   delay.String(),
 		"err":     err.Error(),
 	})
+	p.track(job, "retrying", err.Error())
 
 	time.AfterFunc(delay, func() {
 		p.Enqueue(job)
 	})
+}
+
+func (p *Pool) track(job Job, status, errText string) {
+	p.historyMu.Lock()
+	defer p.historyMu.Unlock()
+
+	now := time.Now().UTC()
+	entry := historyEntry{
+		ID:        job.ID,
+		Kind:      job.Kind,
+		Attempt:   job.Attempt,
+		Status:    status,
+		Error:     errText,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	p.recent = append([]historyEntry{entry}, p.recent...)
+	if len(p.recent) > 50 {
+		p.recent = p.recent[:50]
+	}
+	if status == "dead-letter" {
+		p.deadRecent = append([]historyEntry{entry}, p.deadRecent...)
+		if len(p.deadRecent) > 25 {
+			p.deadRecent = p.deadRecent[:25]
+		}
+	}
 }
 
 func (p *Pool) logDeadLetters(ctx context.Context) {

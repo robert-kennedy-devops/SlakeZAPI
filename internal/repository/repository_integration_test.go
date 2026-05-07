@@ -146,3 +146,183 @@ func TestMessageRepositoryPersistsMediaFields(t *testing.T) {
 		t.Fatalf("unexpected message media keys: %+v", got)
 	}
 }
+
+func TestUserRepositoriesLifecycle(t *testing.T) {
+	db := testutil.OpenTestDB(t)
+	ctx := context.Background()
+
+	userRepo := NewUserRepository(db)
+	tenantRepo := NewTenantRepository(db)
+	tenantUserRepo := NewTenantUserRepository(db)
+	userSessionRepo := NewUserSessionRepository(db)
+
+	now := time.Now().UTC()
+	user := &domain.User{
+		ID:           uuid.NewString(),
+		Email:        "owner@example.com",
+		Name:         "Owner User",
+		PasswordHash: "hashed-password",
+		Active:       true,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	if err := userRepo.Create(ctx, user); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	gotUser, err := userRepo.GetByEmail(ctx, user.Email)
+	if err != nil {
+		t.Fatalf("get user by email: %v", err)
+	}
+	if gotUser.ID != user.ID || gotUser.Name != user.Name {
+		t.Fatalf("unexpected user loaded: %+v", gotUser)
+	}
+
+	tenant := &domain.Tenant{
+		ID:        uuid.NewString(),
+		Name:      "Tenant Auth",
+		Email:     "tenant-auth@example.com",
+		Active:    true,
+		CreatedAt: now,
+	}
+	if err := tenantRepo.Create(ctx, tenant); err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+
+	membership := &domain.TenantUser{
+		ID:        uuid.NewString(),
+		TenantID:  tenant.ID,
+		UserID:    user.ID,
+		Role:      domain.UserRoleOwner,
+		CreatedAt: now,
+	}
+	if err := tenantUserRepo.Create(ctx, membership); err != nil {
+		t.Fatalf("create tenant user: %v", err)
+	}
+
+	gotMembership, err := tenantUserRepo.GetByUserAndTenant(ctx, user.ID, tenant.ID)
+	if err != nil {
+		t.Fatalf("get tenant membership: %v", err)
+	}
+	if gotMembership.Role != domain.UserRoleOwner {
+		t.Fatalf("unexpected membership loaded: %+v", gotMembership)
+	}
+
+	session := &domain.UserSession{
+		ID:               uuid.NewString(),
+		UserID:           user.ID,
+		TokenHash:        "token-hash-1",
+		RefreshTokenHash: "refresh-hash-1",
+		ExpiresAt:        now.Add(24 * time.Hour),
+		RefreshExpiresAt: now.Add(7 * 24 * time.Hour),
+		CreatedAt:        now,
+		LastUsedAt:       now,
+	}
+	if err := userSessionRepo.Create(ctx, session); err != nil {
+		t.Fatalf("create user session: %v", err)
+	}
+
+	gotSession, err := userSessionRepo.GetByHash(ctx, session.TokenHash)
+	if err != nil {
+		t.Fatalf("get session by hash: %v", err)
+	}
+	if gotSession.ID != session.ID || gotSession.UserID != user.ID {
+		t.Fatalf("unexpected session loaded: %+v", gotSession)
+	}
+
+	if err := userSessionRepo.DeleteByUser(ctx, user.ID); err != nil {
+		t.Fatalf("delete sessions by user: %v", err)
+	}
+	if _, err := userSessionRepo.GetByHash(ctx, session.TokenHash); err != domain.ErrUserSessionNotFound {
+		t.Fatalf("expected session not found after delete, got %v", err)
+	}
+}
+
+func TestTenantUserRepositoryListsTenantMembersAndUpdatesRole(t *testing.T) {
+	db := testutil.OpenTestDB(t)
+	ctx := context.Background()
+
+	userRepo := NewUserRepository(db)
+	tenantRepo := NewTenantRepository(db)
+	tenantUserRepo := NewTenantUserRepository(db)
+
+	now := time.Now().UTC()
+	tenant := &domain.Tenant{
+		ID:        uuid.NewString(),
+		Name:      "Tenant Team",
+		Email:     "team@example.com",
+		Active:    true,
+		CreatedAt: now,
+	}
+	if err := tenantRepo.Create(ctx, tenant); err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+
+	owner := &domain.User{
+		ID:           uuid.NewString(),
+		Email:        "owner.team@example.com",
+		Name:         "Owner Team",
+		PasswordHash: "hash-owner",
+		Active:       true,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	if err := userRepo.Create(ctx, owner); err != nil {
+		t.Fatalf("create owner user: %v", err)
+	}
+
+	member := &domain.User{
+		ID:           uuid.NewString(),
+		Email:        "member.team@example.com",
+		Name:         "Member Team",
+		PasswordHash: "hash-member",
+		Active:       true,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	if err := userRepo.Create(ctx, member); err != nil {
+		t.Fatalf("create member user: %v", err)
+	}
+
+	ownerMembership := &domain.TenantUser{
+		ID:        uuid.NewString(),
+		TenantID:  tenant.ID,
+		UserID:    owner.ID,
+		Role:      domain.UserRoleOwner,
+		CreatedAt: now,
+	}
+	if err := tenantUserRepo.Create(ctx, ownerMembership); err != nil {
+		t.Fatalf("create owner membership: %v", err)
+	}
+
+	memberMembership := &domain.TenantUser{
+		ID:        uuid.NewString(),
+		TenantID:  tenant.ID,
+		UserID:    member.ID,
+		Role:      domain.UserRoleViewer,
+		CreatedAt: now,
+	}
+	if err := tenantUserRepo.Create(ctx, memberMembership); err != nil {
+		t.Fatalf("create member membership: %v", err)
+	}
+
+	members, err := tenantUserRepo.ListByTenant(ctx, tenant.ID)
+	if err != nil {
+		t.Fatalf("list tenant members: %v", err)
+	}
+	if len(members) != 2 {
+		t.Fatalf("expected 2 tenant members, got %d", len(members))
+	}
+
+	if err := tenantUserRepo.UpdateRole(ctx, memberMembership.ID, domain.UserRoleOperator); err != nil {
+		t.Fatalf("update tenant role: %v", err)
+	}
+
+	updated, err := tenantUserRepo.GetByID(ctx, memberMembership.ID)
+	if err != nil {
+		t.Fatalf("get membership by id: %v", err)
+	}
+	if updated.Role != domain.UserRoleOperator {
+		t.Fatalf("expected operator role, got %s", updated.Role)
+	}
+}

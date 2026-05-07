@@ -1,6 +1,15 @@
 # 🟢 WhatsApp SaaS API — Go
 
-Plataforma SaaS para envio e recebimento de mensagens WhatsApp, construída em **Go** com **Clean Architecture**, integração real via **WhatsMeow** e suporte a múltiplos tenants.
+Plataforma SaaS para envio e recebimento de mensagens WhatsApp, construída em **Go** com **Clean Architecture**, integração real via **WhatsMeow**, suporte a múltiplos tenants e um frontend moderno em **Next.js** para operação do cliente final.
+
+Estado atual do projeto:
+
+- multi-instância por tenant
+- dashboard web com autenticação própria
+- campanhas imediatas e agendadas
+- inbox operacional por conversa
+- envio de texto, mídia, grupos, status e mensagens interativas
+- webhooks, WebSocket, fila observável e docs OpenAPI/Postman
 
 ---
 
@@ -62,8 +71,12 @@ whatsapp-saas/
 ├── migrations/
 │   └── 001_initial.sql          # Schema completo + índices
 ├── docker/
-│   ├── Dockerfile               # Multi-stage build (scratch)
-│   └── docker-compose.yml       # API + PostgreSQL
+│   ├── Dockerfile               # Multi-stage build da API
+│   └── docker-compose.yml       # API + PostgreSQL + frontend
+├── web/
+│   ├── src/app/                 # App Router (login, signup, dashboard)
+│   ├── src/components/          # Dashboard e providers React Query
+│   └── src/lib/                 # API client, auth local e tipos do frontend
 ├── .env.example
 └── go.mod
 ```
@@ -90,21 +103,51 @@ cp .env.example .env
 ### 2. Subir com Docker Compose
 
 ```bash
-cd docker
-docker compose up --build
+make docker-up
 ```
 
-A API estará disponível em `http://localhost:8080`.
+Endpoints locais:
+
+- Frontend: `http://localhost:3000`
+- API: `http://localhost:8080`
+
+Se a porta `5432` já estiver ocupada na máquina:
+
+```bash
+POSTGRES_PORT=5433 docker compose -f docker/docker-compose.yml up --build -d
+```
 
 ### 3. Rodar localmente (sem Docker)
 
 ```bash
-# Suba apenas o banco
-docker compose up postgres -d
+# Terminal 1: banco
+make docker-db
 
-# Configure o .env e rode a API
-go run ./cmd/api
+# Terminal 2: API
+make run
+
+# Terminal 3: frontend
+make web-dev
 ```
+
+### 4. Frontend
+
+O painel web usa login de usuário em `/app/auth/*`, seleção de tenant por header `X-Tenant-ID` e realtime via `/app/ws`.
+
+- login: `POST /app/auth/login`
+- signup: `POST /app/auth/signup`
+- refresh: `POST /app/auth/refresh`
+- perfil/sessão: `GET /app/auth/me`
+- dashboard summary: `GET /app/tenant/summary`
+- mensagens, inbox, fila, grupos, campanhas, webhooks, credenciais e sessão WhatsApp via `/app/*`
+- para frontend e API em subdomínios diferentes, use cookie `SameSite=None` + `Secure`
+
+### 5. Documentação de dev
+
+Arquivos servidos pela própria API:
+
+- OpenAPI: `GET /docs/openapi.yaml`
+- Postman: `GET /docs/postman_collection.json`
 
 ---
 
@@ -116,6 +159,8 @@ go run ./cmd/api
 | `GET` | `/livez` | Liveness probe |
 | `GET` | `/readyz` | Readiness probe com dependências |
 | `GET` | `/metrics` | Métricas Prometheus |
+| `GET` | `/docs/openapi.yaml` | Especificação OpenAPI servida pela API |
+| `GET` | `/docs/postman_collection.json` | Coleção Postman servida pela API |
 | `POST` | `/auth/bootstrap` | Criar tenant, assinatura inicial e primeira API key |
 | `GET` | `/auth/me` | Consultar resumo do tenant autenticado |
 | `POST` | `/auth/apikey` | Criar nova API Key para o tenant |
@@ -123,18 +168,61 @@ go run ./cmd/api
 | `DELETE` | `/auth/apikey/{id}` | Revogar API Key |
 | `POST` | `/whatsapp/connect` | Gerar QR Code para conexão |
 | `GET` | `/whatsapp/status` | Status da sessão WhatsApp |
+| `GET` | `/whatsapp/qr` | Página HTML com o QR code atual |
+| `GET` | `/whatsapp/qr.png` | PNG do QR code atual |
 | `POST` | `/whatsapp/disconnect` | Desconectar sessão WhatsApp |
 | `POST` | `/whatsapp/logout` | Desparear a sessão do WhatsApp |
 | `POST` | `/messages/send` | Enviar mensagem de texto |
+| `POST` | `/messages/send-bulk` | Enviar mensagem em massa para vários números |
 | `POST` | `/messages/send-media` | Enviar imagem, video, audio ou documento por URL |
+| `POST` | `/messages/send-interactive` | Enviar botões, lista ou enquete |
+| `POST` | `/messages/send-group` | Enviar mensagem para um grupo |
+| `POST` | `/status/post` | Publicar texto ou mídia no status |
+| `POST` | `/contacts/resolve` | Reconhecer quais números existem no WhatsApp |
 | `GET` | `/messages` | Listar mensagens do tenant |
+| `GET` | `/conversations` | Listar conversas operacionais por instância |
+| `POST` | `/conversations/{phone}` | Atualizar estado e nota de uma conversa |
+| `GET` | `/groups` | Listar grupos da instância conectada |
 | `GET` | `/messages/{id}` | Consultar uma mensagem específica |
 | `GET` | `/messages/{id}/media` | Baixar o binário de uma mídia recebida |
 | `POST` | `/webhook` | Registrar URL de webhook |
 | `GET` | `/webhook` | Listar webhooks ativos |
 | `DELETE` | `/webhook/{id}` | Desativar webhook |
 | `GET` | `/usage` | Consultar uso mensal atual |
+| `GET` | `/queue` | Snapshot da fila interna com jobs recentes |
 | `GET` | `/ws` | WebSocket — eventos em tempo real |
+| `GET` | `/instances` | Listar instancias do tenant |
+| `POST` | `/instances` | Criar nova instancia WhatsApp |
+| `GET` | `/campaigns` | Listar campanhas da instancia |
+| `POST` | `/campaigns` | Criar campanha imediata ou agendada |
+| `POST` | `/campaigns/{id}/run` | Disparar campanha manualmente |
+| `POST` | `/app/auth/signup` | Criar usuário, tenant owner e sessão do app |
+| `POST` | `/app/auth/login` | Autenticar usuário do dashboard |
+| `POST` | `/app/auth/refresh` | Renovar access token usando refresh cookie |
+| `GET` | `/app/auth/me` | Consultar usuário atual e memberships |
+| `GET` | `/app/tenant/summary` | Resumo do tenant selecionado |
+| `GET` | `/app/messages` | Listar mensagens usando sessão de usuário |
+| `POST` | `/app/messages/send` | Enviar mensagem usando sessão de usuário |
+| `POST` | `/app/messages/send-bulk` | Disparo em massa usando sessão de usuário |
+| `POST` | `/app/messages/send-media` | Enviar mídia usando sessão de usuário |
+| `POST` | `/app/messages/send-interactive` | Enviar botões, lista ou enquete no dashboard |
+| `POST` | `/app/messages/send-group` | Enviar mensagem para grupo no dashboard |
+| `POST` | `/app/status/post` | Publicar status usando sessão de usuário |
+| `POST` | `/app/contacts/resolve` | Reconhecer contatos válidos para envio |
+| `GET` | `/app/conversations` | Inbox operacional por conversa |
+| `POST` | `/app/conversations/{phone}` | Atualizar estado/nota da conversa |
+| `GET` | `/app/groups` | Listar grupos no dashboard |
+| `GET` | `/app/webhooks` | Listar webhooks no dashboard |
+| `POST` | `/app/webhooks` | Criar webhook no dashboard |
+| `GET` | `/app/apikeys` | Listar API keys no dashboard |
+| `POST` | `/app/apikeys` | Criar API key no dashboard |
+| `GET` | `/app/ws` | WebSocket do dashboard |
+| `GET` | `/app/instances` | Listar instancias no dashboard |
+| `POST` | `/app/instances` | Criar instancia no dashboard |
+| `GET` | `/app/campaigns` | Listar campanhas da instancia atual |
+| `POST` | `/app/campaigns` | Criar campanha no dashboard |
+| `POST` | `/app/campaigns/{id}/run` | Rodar campanha manualmente |
+| `GET` | `/app/queue` | Fila observável no dashboard |
 
 ### Autenticação
 
@@ -142,6 +230,22 @@ Todas as rotas, exceto `/health` e `/auth/bootstrap`, requerem o header:
 
 ```
 Authorization: Bearer <API_KEY>
+```
+
+As rotas de dashboard em `/app/*` aceitam:
+
+```http
+Authorization: Bearer <USER_SESSION_TOKEN>
+X-Tenant-ID: <tenant_id>
+X-Instance-ID: <instance_id>
+```
+
+Se `X-Instance-ID` nao for enviado, a API usa a instancia padrao do tenant.
+
+Para WebSocket do navegador e QR/image endpoints do dashboard, o token também pode ser enviado via query string:
+
+```text
+?access_token=<token>&tenant_id=<tenant_id>
 ```
 
 ---
@@ -177,6 +281,27 @@ curl -X POST http://localhost:8080/messages/send \
 }
 ```
 
+### Reconhecer contatos
+
+```bash
+curl -X POST http://localhost:8080/contacts/resolve \
+  -H "Authorization: Bearer sua_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{"phones":["5511999999999","+55 (11) 98888-8888"]}'
+```
+
+### Envio em massa
+
+```bash
+curl -X POST http://localhost:8080/messages/send-bulk \
+  -H "Authorization: Bearer sua_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "phones": ["5511999999999", "5511888888888"],
+    "message": "Campanha de teste"
+  }'
+```
+
 ### Enviar mídia
 
 ```bash
@@ -191,6 +316,38 @@ curl -X POST http://localhost:8080/messages/send-media \
   }'
 ```
 
+### Enviar interação por botões
+
+```bash
+curl -X POST http://localhost:8080/messages/send-interactive \
+  -H "Authorization: Bearer sua_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "phone": "5511999999999",
+    "type": "buttons",
+    "body": "Escolha uma opção",
+    "footer": "Atendimento",
+    "buttons": [
+      {"id":"sales","title":"Comercial"},
+      {"id":"support","title":"Suporte"}
+    ]
+  }'
+```
+
+### Snapshot da fila
+
+```bash
+curl http://localhost:8080/queue \
+  -H "Authorization: Bearer sua_api_key"
+```
+
+### Abrir docs da API
+
+```bash
+curl http://localhost:8080/docs/openapi.yaml
+curl http://localhost:8080/docs/postman_collection.json
+```
+
 ### Conectar WhatsApp
 
 ```bash
@@ -202,8 +359,21 @@ curl -X POST http://localhost:8080/whatsapp/connect \
 ```json
 {
   "qr_code": "string-do-qr-real",
+  "qr_png_url": "http://localhost:8080/whatsapp/qr.png",
+  "qr_page_url": "http://localhost:8080/whatsapp/qr",
   "status": "connecting"
 }
+```
+
+Para abrir o QR como imagem local:
+
+```powershell
+Invoke-WebRequest `
+  -Uri "http://localhost:8080/whatsapp/qr.png" `
+  -Headers @{ Authorization = "Bearer sua_api_key" } `
+  -OutFile ".\whatsapp-qr.png"
+
+Start-Process ".\whatsapp-qr.png"
 ```
 
 ### Registrar Webhook
@@ -264,9 +434,9 @@ Headers enviados:
 ### WebSocket — Eventos em Tempo Real
 
 ```javascript
-const ws = new WebSocket('ws://localhost:8080/ws', [], {
-  headers: { Authorization: 'Bearer sua_api_key' }
-});
+const ws = new WebSocket(
+  'ws://localhost:8080/app/ws?access_token=sua_sessao&tenant_id=tenant_123'
+);
 
 ws.onmessage = (e) => {
   const event = JSON.parse(e.data);
@@ -296,12 +466,14 @@ Quando o limite é excedido, a API retorna `HTTP 402 Payment Required`.
 - **Webhooks** são assinados via HMAC-SHA256 no header `X-Webhook-Signature`
 - Eventos de webhook são entregues em envelope versionado (`version: "v1"`) com `id` e `timestamp`
 - **Rate limiting** por tenant (token bucket, configurável via `RATE_LIMIT_RPS`)
+- **CORS** configurável para o frontend via `CORS_ALLOWED_ORIGINS`
 
 ## 📈 Observabilidade
 
 - `GET /metrics` expõe métricas Prometheus de requests HTTP, latência, inflight requests e estado básico dos componentes.
 - `GET /readyz` valida readiness do banco e worker pool.
 - `GET /livez` responde liveness simples para orquestradores.
+- `GET /queue` e `GET /app/queue` expõem jobs recentes, retries e dead letters.
 - Logs de auditoria são emitidos para operações críticas como bootstrap, criação/revogação de API key, envio de mensagens, mudanças de sessão e webhooks.
 
 ---
@@ -339,6 +511,7 @@ Fluxo operacional:
 - `POST /auth/bootstrap` cria tenant, assinatura inicial e primeira API key.
 - `POST /whatsapp/connect` inicia o pareamento e retorna o QR real quando necessário.
 - Eventos inbound, receipts e mudanças de conexão são persistidos e publicados para WebSocket e webhook.
+- `GET /whatsapp/status` também expõe `last_event`, `last_error` e links do QR quando a sessão estiver em pareamento.
 
 ---
 
@@ -356,6 +529,14 @@ Fluxo operacional:
 | `WEBHOOK_RETRIES` | `3` | Tentativas de retry (backoff exp.) |
 | `RATE_LIMIT_RPS` | `10` | Requisições/segundo por tenant |
 | `SHUTDOWN_TIMEOUT` | `10s` | Timeout para graceful shutdown |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:3000` | Origins permitidas para o frontend |
+| `USER_ACCESS_TOKEN_TTL` | `15m` | Duração do access token do dashboard |
+| `USER_REFRESH_TOKEN_TTL` | `168h` | Duração do refresh token rotativo |
+| `USER_SESSION_COOKIE_NAME` | `slakezapi_rt` | Nome do cookie `HttpOnly` da sessão web |
+| `USER_SESSION_COOKIE_SECURE` | `false` | Use `true` em produção com HTTPS |
+| `USER_SESSION_COOKIE_DOMAIN` | vazio | Domínio compartilhado do cookie, ex: `.example.com` |
+| `USER_SESSION_COOKIE_SAMESITE` | `lax` | `lax`, `strict` ou `none` |
+| `NEXT_PUBLIC_API_URL` | `http://localhost:8080` | Base URL usada pelo frontend Next.js |
 
 ---
 
@@ -363,7 +544,50 @@ Fluxo operacional:
 
 ```bash
 go test ./...
+cd web && npm run build
+cd web && npx playwright install --with-deps chromium
+cd web && npm run test:e2e
 ```
+
+Validação mínima antes de publicar:
+
+```bash
+docker compose -f docker/docker-compose.yml config
+POSTGRES_PORT=5433 docker compose -f docker/docker-compose.yml up --build -d
+curl http://localhost:8080/health
+curl -I http://localhost:3000
+curl -I http://localhost:8080/docs/openapi.yaml
+```
+
+---
+
+## 🖥️ Frontend
+
+O frontend fica em `web/` e foi construído com:
+
+- `Next.js` + `React` + `TypeScript`
+- `Tailwind CSS`
+- `TanStack Query`
+- autenticação por sessão de usuário
+- QR code, mensagens, inbox operacional, grupos, status, campanhas, webhooks, fila, API keys e uso mensal no mesmo dashboard
+
+Fluxo principal:
+
+- `/signup` cria usuário + workspace
+- `/login` autentica a sessão do app
+- o app renova sessão automaticamente com refresh cookie `HttpOnly`
+- para setup cross-domain, configure `USER_SESSION_COOKIE_DOMAIN=.seu-dominio.com`, `USER_SESSION_COOKIE_SAMESITE=none` e HTTPS
+- `/dashboard` consome as rotas `/app/*`
+- realtime chega por `/app/ws`
+
+Observabilidade:
+
+- métricas HTTP em `/metrics`
+- métricas de autenticação do dashboard em `slakezapi_auth_events_total{action,outcome}`
+
+CI disponível em `.github/workflows/ci.yml` com validação de Go, build do frontend, Playwright e build das imagens Docker.
+
+Com isso, a API continua apta para integrações via API key e o produto ganha uma camada SaaS pronta para operação humana.
 
 Para rodar os testes de integração com PostgreSQL real, defina `TEST_DATABASE_URL` ou reutilize `DATABASE_URL`.
 

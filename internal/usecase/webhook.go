@@ -12,20 +12,23 @@ import (
 )
 
 type WebhookUsecase struct {
-	webhookRepo domain.WebhookRepository
-	subRepo     domain.SubscriptionRepository
-	log         *logger.Logger
+	webhookRepo  domain.WebhookRepository
+	instanceRepo domain.InstanceRepository
+	subRepo      domain.SubscriptionRepository
+	log          *logger.Logger
 }
 
 func NewWebhookUsecase(
 	webhookRepo domain.WebhookRepository,
+	instanceRepo domain.InstanceRepository,
 	subRepo domain.SubscriptionRepository,
 	log *logger.Logger,
 ) *WebhookUsecase {
 	return &WebhookUsecase{
-		webhookRepo: webhookRepo,
-		subRepo:     subRepo,
-		log:         log,
+		webhookRepo:  webhookRepo,
+		instanceRepo: instanceRepo,
+		subRepo:      subRepo,
+		log:          log,
 	}
 }
 
@@ -42,14 +45,20 @@ func (u *WebhookUsecase) Register(ctx context.Context, tenantID string, req doma
 
 	secret, _ := generateSecret()
 
+	instanceID, err := u.resolveInstanceID(ctx, tenantID, req.InstanceID)
+	if err != nil {
+		return nil, err
+	}
+
 	wh := &domain.Webhook{
-		ID:        uuid.NewString(),
-		TenantID:  tenantID,
-		URL:       req.URL,
-		Events:    req.Events,
-		Secret:    secret,
-		Active:    true,
-		CreatedAt: time.Now().UTC(),
+		ID:         uuid.NewString(),
+		TenantID:   tenantID,
+		InstanceID: instanceID,
+		URL:        req.URL,
+		Events:     req.Events,
+		Secret:     secret,
+		Active:     true,
+		CreatedAt:  time.Now().UTC(),
 	}
 
 	if err := u.webhookRepo.Create(ctx, wh); err != nil {
@@ -64,12 +73,20 @@ func (u *WebhookUsecase) Register(ctx context.Context, tenantID string, req doma
 }
 
 // ListByTenant returns active webhooks for a tenant.
-func (u *WebhookUsecase) ListByTenant(ctx context.Context, tenantID string) ([]domain.Webhook, error) {
-	return u.webhookRepo.GetByTenant(ctx, tenantID)
+func (u *WebhookUsecase) ListByTenant(ctx context.Context, tenantID, requestedInstanceID string) ([]domain.Webhook, error) {
+	instanceID, err := u.resolveInstanceID(ctx, tenantID, requestedInstanceID)
+	if err != nil {
+		return nil, err
+	}
+	return u.webhookRepo.GetByTenant(ctx, tenantID, instanceID)
 }
 
-func (u *WebhookUsecase) Delete(ctx context.Context, tenantID, webhookID string) error {
-	hooks, err := u.webhookRepo.GetByTenant(ctx, tenantID)
+func (u *WebhookUsecase) Delete(ctx context.Context, tenantID, requestedInstanceID, webhookID string) error {
+	instanceID, err := u.resolveInstanceID(ctx, tenantID, requestedInstanceID)
+	if err != nil {
+		return err
+	}
+	hooks, err := u.webhookRepo.GetByTenant(ctx, tenantID, instanceID)
 	if err != nil {
 		return err
 	}
@@ -79,6 +96,24 @@ func (u *WebhookUsecase) Delete(ctx context.Context, tenantID, webhookID string)
 		}
 	}
 	return domain.ErrWebhookNotFound
+}
+
+func (u *WebhookUsecase) resolveInstanceID(ctx context.Context, tenantID, requestedInstanceID string) (string, error) {
+	if requestedInstanceID != "" {
+		instance, err := u.instanceRepo.GetByID(ctx, requestedInstanceID)
+		if err != nil {
+			return "", err
+		}
+		if instance.TenantID != tenantID {
+			return "", domain.ErrInstanceNotFound
+		}
+		return instance.ID, nil
+	}
+	instance, err := u.instanceRepo.GetDefaultByTenant(ctx, tenantID)
+	if err != nil {
+		return "", err
+	}
+	return instance.ID, nil
 }
 
 func generateSecret() (string, error) {

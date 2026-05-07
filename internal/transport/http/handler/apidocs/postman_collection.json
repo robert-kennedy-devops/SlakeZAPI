@@ -1,0 +1,115 @@
+{
+  "info": {
+    "name": "SlakeZAPI",
+    "_postman_id": "1a091cb3-64d7-4bdb-aaf1-f637de3ce4b0",
+    "description": "Colecao principal para autenticar, operar instancias, mensagens, campanhas e observabilidade.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "accessToken", "value": "" },
+    { "key": "tenantId", "value": "" },
+    { "key": "instanceId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Bootstrap Tenant",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/auth/bootstrap",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Tenant Demo\",\n  \"email\": \"demo@example.com\",\n  \"plan\": \"growth\"\n}"
+        }
+      }
+    },
+    {
+      "name": "App Login",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/app/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"owner@app.example\",\n  \"password\": \"supersecret123\"\n}"
+        }
+      }
+    },
+    {
+      "name": "List Instances",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+          { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+        ],
+        "url": "{{baseUrl}}/app/instances"
+      }
+    },
+    {
+      "name": "Connect WhatsApp",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+          { "key": "X-Tenant-ID", "value": "{{tenantId}}" },
+          { "key": "X-Instance-ID", "value": "{{instanceId}}" }
+        ],
+        "url": "{{baseUrl}}/app/whatsapp/connect"
+      }
+    },
+    {
+      "name": "Send Text Message",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+          { "key": "X-Tenant-ID", "value": "{{tenantId}}" },
+          { "key": "X-Instance-ID", "value": "{{instanceId}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{baseUrl}}/app/messages/send",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"phone\": \"5511999999999\",\n  \"message\": \"Ola do SlakeZAPI\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Send Interactive Buttons",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+          { "key": "X-Tenant-ID", "value": "{{tenantId}}" },
+          { "key": "X-Instance-ID", "value": "{{instanceId}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{baseUrl}}/app/messages/send-interactive",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"phone\": \"5511999999999\",\n  \"type\": \"buttons\",\n  \"body\": \"Escolha uma opcao\",\n  \"footer\": \"Atendimento\",\n  \"buttons\": [\n    { \"id\": \"sales\", \"title\": \"Comercial\" },\n    { \"id\": \"support\", \"title\": \"Suporte\" }\n  ]\n}"
+        }
+      }
+    },
+    {
+      "name": "Queue Snapshot",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+          { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+        ],
+        "url": "{{baseUrl}}/app/queue"
+      }
+    },
+    {
+      "name": "OpenAPI",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/docs/openapi.yaml"
+      }
+    }
+  ]
+}

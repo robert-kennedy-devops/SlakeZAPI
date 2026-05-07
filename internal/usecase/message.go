@@ -17,19 +17,24 @@ import (
 	"github.com/whatsapp-saas/api/pkg/logger"
 )
 
-var phoneRegex = regexp.MustCompile(`^\d{7,15}$`)
+var (
+	phoneRegex      = regexp.MustCompile(`^\d{8,15}$`)
+	nonDigitPattern = regexp.MustCompile(`\D`)
+)
 
 const maxMediaDownloadSize = 32 << 20
 
 type MessageUsecase struct {
-	msgRepo  domain.MessageRepository
-	whatsapp domain.WhatsAppService
-	billing  domain.BillingService
-	eventBus domain.EventBus
-	log      *logger.Logger
+	msgRepo      domain.MessageRepository
+	instanceRepo domain.InstanceRepository
+	campaignRepo domain.CampaignRepository
+	whatsapp     domain.WhatsAppService
+	billing      domain.BillingService
+	eventBus     domain.EventBus
+	log          *logger.Logger
 }
 
-func (u *MessageUsecase) ListMessages(ctx context.Context, tenantID string, rawQuery url.Values) ([]domain.Message, error) {
+func (u *MessageUsecase) ListMessages(ctx context.Context, tenantID, requestedInstanceID string, rawQuery url.Values) ([]domain.Message, error) {
 	limit := 50
 	offset := 0
 
@@ -48,10 +53,63 @@ func (u *MessageUsecase) ListMessages(ctx context.Context, tenantID string, rawQ
 		offset = parsed
 	}
 
-	return u.msgRepo.ListByTenant(ctx, tenantID, limit, offset)
+	instanceID, err := u.resolveInstanceID(ctx, tenantID, requestedInstanceID)
+	if err != nil {
+		return nil, err
+	}
+	return u.msgRepo.ListByTenant(ctx, tenantID, instanceID, limit, offset)
 }
 
-func (u *MessageUsecase) GetMessage(ctx context.Context, tenantID, messageID string) (*domain.Message, error) {
+func (u *MessageUsecase) ListConversations(ctx context.Context, tenantID, requestedInstanceID string, rawQuery url.Values) ([]domain.Conversation, error) {
+	limit := 50
+	offset := 0
+
+	if v := rawQuery.Get("limit"); v != "" {
+		parsed, err := strconv.Atoi(v)
+		if err != nil || parsed <= 0 || parsed > 200 {
+			return nil, fmt.Errorf("%w: invalid limit", domain.ErrBadRequest)
+		}
+		limit = parsed
+	}
+	if v := rawQuery.Get("offset"); v != "" {
+		parsed, err := strconv.Atoi(v)
+		if err != nil || parsed < 0 {
+			return nil, fmt.Errorf("%w: invalid offset", domain.ErrBadRequest)
+		}
+		offset = parsed
+	}
+
+	instanceID, err := u.resolveInstanceID(ctx, tenantID, requestedInstanceID)
+	if err != nil {
+		return nil, err
+	}
+	return u.msgRepo.ListConversations(ctx, tenantID, instanceID, limit, offset)
+}
+
+func (u *MessageUsecase) UpdateConversation(ctx context.Context, tenantID, requestedInstanceID, phone string, req domain.UpdateConversationRequest) (*domain.Conversation, error) {
+	instanceID, err := u.resolveInstanceID(ctx, tenantID, requestedInstanceID)
+	if err != nil {
+		return nil, err
+	}
+	convo, err := u.msgRepo.GetConversation(ctx, tenantID, instanceID, phone)
+	if err != nil {
+		return nil, err
+	}
+	if req.State != "" {
+		convo.State = req.State
+	}
+	if req.AssignedUserID != "" {
+		convo.AssignedUserID = req.AssignedUserID
+	}
+	convo.Note = req.Note
+	convo.UpdatedAt = time.Now().UTC()
+	if err := u.msgRepo.UpdateConversation(ctx, convo); err != nil {
+		return nil, err
+	}
+	return u.msgRepo.GetConversation(ctx, tenantID, instanceID, phone)
+}
+
+func (u *MessageUsecase) GetMessage(ctx context.Context, tenantID, requestedInstanceID, messageID string) (*domain.Message, error) {
 	msg, err := u.msgRepo.GetByID(ctx, messageID)
 	if err != nil {
 		return nil, err
@@ -59,11 +117,14 @@ func (u *MessageUsecase) GetMessage(ctx context.Context, tenantID, messageID str
 	if msg.TenantID != tenantID {
 		return nil, domain.ErrMessageNotFound
 	}
+	if requestedInstanceID != "" && msg.InstanceID != requestedInstanceID {
+		return nil, domain.ErrMessageNotFound
+	}
 	return msg, nil
 }
 
-func (u *MessageUsecase) GetMessageMedia(ctx context.Context, tenantID, messageID string) (*domain.MediaDownload, error) {
-	msg, err := u.GetMessage(ctx, tenantID, messageID)
+func (u *MessageUsecase) GetMessageMedia(ctx context.Context, tenantID, requestedInstanceID, messageID string) (*domain.MediaDownload, error) {
+	msg, err := u.GetMessage(ctx, tenantID, requestedInstanceID, messageID)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +132,7 @@ func (u *MessageUsecase) GetMessageMedia(ctx context.Context, tenantID, messageI
 		return nil, domain.ErrMessageMediaAbsent
 	}
 
-	download, err := u.whatsapp.DownloadMedia(ctx, tenantID, msg)
+	download, err := u.whatsapp.DownloadMedia(ctx, tenantID, msg.InstanceID, msg)
 	if err != nil {
 		return nil, err
 	}
@@ -84,51 +145,109 @@ func (u *MessageUsecase) GetMessageMedia(ctx context.Context, tenantID, messageI
 	return download, nil
 }
 
+func (u *MessageUsecase) ResolveContacts(ctx context.Context, tenantID string, req domain.ResolveContactsRequest) ([]domain.ResolvedContact, error) {
+	instanceID, err := u.resolveInstanceID(ctx, tenantID, req.InstanceID)
+	if err != nil {
+		return nil, err
+	}
+	normalized, originalByNormalized, err := normalizePhoneInputs(req.Phones)
+	if err != nil {
+		return nil, err
+	}
+	recognized, err := u.whatsapp.ResolveContacts(ctx, tenantID, instanceID, normalized)
+	if err != nil {
+		return nil, err
+	}
+
+	byLookup := make(map[string]domain.ResolvedContact, len(recognized))
+	for _, contact := range recognized {
+		byLookup[strings.TrimPrefix(contact.LookupPhone, "+")] = contact
+	}
+
+	results := make([]domain.ResolvedContact, 0, len(normalized))
+	for _, phone := range normalized {
+		contact, ok := byLookup[phone]
+		if !ok {
+			results = append(results, domain.ResolvedContact{
+				InputPhone:  originalByNormalized[phone],
+				LookupPhone: "+" + phone,
+				Phone:       phone,
+				IsWhatsApp:  false,
+				Error:       "contact lookup returned no result",
+			})
+			continue
+		}
+		contact.InputPhone = originalByNormalized[phone]
+		if contact.Phone == "" {
+			contact.Phone = phone
+		}
+		results = append(results, contact)
+	}
+
+	return results, nil
+}
+
 func NewMessageUsecase(
 	msgRepo domain.MessageRepository,
+	instanceRepo domain.InstanceRepository,
+	campaignRepo domain.CampaignRepository,
 	whatsapp domain.WhatsAppService,
 	billing domain.BillingService,
 	eventBus domain.EventBus,
 	log *logger.Logger,
 ) *MessageUsecase {
 	return &MessageUsecase{
-		msgRepo:  msgRepo,
-		whatsapp: whatsapp,
-		billing:  billing,
-		eventBus: eventBus,
-		log:      log,
+		msgRepo:      msgRepo,
+		instanceRepo: instanceRepo,
+		campaignRepo: campaignRepo,
+		whatsapp:     whatsapp,
+		billing:      billing,
+		eventBus:     eventBus,
+		log:          log,
 	}
 }
 
 // SendMessage validates, checks billing, sends via WhatsApp, and persists the message.
 func (u *MessageUsecase) SendMessage(ctx context.Context, tenantID string, req domain.SendMessageRequest) (*domain.SendMessageResponse, error) {
-	// 1. Validate phone
-	if !phoneRegex.MatchString(req.Phone) {
-		return nil, domain.ErrInvalidPhone
-	}
 	if req.Message == "" {
 		return nil, fmt.Errorf("%w: message body is required", domain.ErrBadRequest)
 	}
 
-	// 2. Check plan limit
+	instanceID, err := u.resolveInstanceID(ctx, tenantID, req.InstanceID)
+	if err != nil {
+		return nil, err
+	}
+
+	resolvedPhone, err := u.resolveSingleRecipient(ctx, tenantID, instanceID, req.Phone)
+	if err != nil {
+		return nil, err
+	}
+
+	return u.sendTextToResolvedPhone(ctx, tenantID, instanceID, resolvedPhone, req.Message)
+}
+
+func (u *MessageUsecase) sendTextToResolvedPhone(ctx context.Context, tenantID, instanceID, phone, message string) (*domain.SendMessageResponse, error) {
+	if message == "" {
+		return nil, fmt.Errorf("%w: message body is required", domain.ErrBadRequest)
+	}
+
 	if err := u.billing.CheckLimit(ctx, tenantID); err != nil {
 		return nil, err
 	}
 
-	// 3. Send via WhatsApp
-	waID, err := u.whatsapp.SendMessage(ctx, tenantID, req.Phone, req.Message)
+	waID, err := u.whatsapp.SendMessage(ctx, tenantID, instanceID, phone, message)
 	if err != nil {
 		return nil, fmt.Errorf("whatsapp send: %w", err)
 	}
 
-	// 4. Persist message record
 	now := time.Now().UTC()
 	msg := &domain.Message{
 		ID:         uuid.NewString(),
 		TenantID:   tenantID,
+		InstanceID: instanceID,
 		WhatsAppID: waID,
-		Phone:      req.Phone,
-		Body:       req.Message,
+		Phone:      phone,
+		Body:       message,
 		Type:       "text",
 		Direction:  "outbound",
 		Status:     domain.MessageStatusSent,
@@ -141,22 +260,21 @@ func (u *MessageUsecase) SendMessage(ctx context.Context, tenantID string, req d
 		// non-fatal: message was sent, log and continue
 	}
 
-	// 5. Track usage
 	go func() {
 		if err := u.billing.TrackSent(context.Background(), tenantID); err != nil {
 			u.log.WithContext(ctx).Error("usage tracking failed", map[string]interface{}{"err": err.Error()})
 		}
 	}()
 
-	// 6. Publish event to internal bus
 	u.eventBus.Publish(domain.Event{
-		Type:     domain.EventMessageSent,
-		TenantID: tenantID,
-		Payload:  msg,
+		Type:       domain.EventMessageSent,
+		TenantID:   tenantID,
+		InstanceID: instanceID,
+		Payload:    msg,
 	})
 
 	u.log.WithContext(ctx).Info("message sent", map[string]interface{}{
-		"message_id": msg.ID, "phone": req.Phone,
+		"message_id": msg.ID, "phone": phone,
 	})
 
 	return &domain.SendMessageResponse{
@@ -165,10 +283,57 @@ func (u *MessageUsecase) SendMessage(ctx context.Context, tenantID string, req d
 	}, nil
 }
 
-func (u *MessageUsecase) SendMediaMessage(ctx context.Context, tenantID string, req domain.SendMediaMessageRequest) (*domain.SendMessageResponse, error) {
-	if !phoneRegex.MatchString(req.Phone) {
-		return nil, domain.ErrInvalidPhone
+func (u *MessageUsecase) SendBulkMessage(ctx context.Context, tenantID string, req domain.BulkSendMessageRequest) (*domain.BulkSendMessageResponse, error) {
+	if strings.TrimSpace(req.Message) == "" {
+		return nil, fmt.Errorf("%w: message body is required", domain.ErrBadRequest)
 	}
+	if len(req.Phones) == 0 {
+		return nil, fmt.Errorf("%w: at least one phone is required", domain.ErrBadRequest)
+	}
+
+	contacts, err := u.ResolveContacts(ctx, tenantID, domain.ResolveContactsRequest{Phones: req.Phones})
+	if err != nil {
+		return nil, err
+	}
+	instanceID, err := u.resolveInstanceID(ctx, tenantID, req.InstanceID)
+	if err != nil {
+		return nil, err
+	}
+
+	response := &domain.BulkSendMessageResponse{
+		Total:   len(req.Phones),
+		Results: make([]domain.BulkSendMessageItem, 0, len(contacts)),
+	}
+	for _, contact := range contacts {
+		item := domain.BulkSendMessageItem{
+			InputPhone: contact.InputPhone,
+			Phone:      contact.Phone,
+			IsWhatsApp: contact.IsWhatsApp,
+		}
+		if !contact.IsWhatsApp {
+			item.Error = contact.Error
+			response.Failed++
+			response.Results = append(response.Results, item)
+			continue
+		}
+
+		response.Accepted++
+		singleResp, sendErr := u.sendTextToResolvedPhone(ctx, tenantID, instanceID, contact.Phone, req.Message)
+		if sendErr != nil {
+			item.Error = sendErr.Error()
+			response.Failed++
+		} else {
+			item.MessageID = singleResp.MessageID
+			item.Status = singleResp.Status
+			response.Sent++
+		}
+		response.Results = append(response.Results, item)
+	}
+
+	return response, nil
+}
+
+func (u *MessageUsecase) SendMediaMessage(ctx context.Context, tenantID string, req domain.SendMediaMessageRequest) (*domain.SendMessageResponse, error) {
 	mediaType := strings.ToLower(strings.TrimSpace(req.Type))
 	if mediaType != "image" && mediaType != "video" && mediaType != "audio" && mediaType != "document" {
 		return nil, fmt.Errorf("%w: invalid media type", domain.ErrBadRequest)
@@ -184,12 +349,23 @@ func (u *MessageUsecase) SendMediaMessage(ctx context.Context, tenantID string, 
 		return nil, err
 	}
 
+	instanceID, err := u.resolveInstanceID(ctx, tenantID, req.InstanceID)
+	if err != nil {
+		return nil, err
+	}
+
+	resolvedPhone, err := u.resolveSingleRecipient(ctx, tenantID, instanceID, req.Phone)
+	if err != nil {
+		return nil, err
+	}
+	req.Phone = resolvedPhone
+
 	enriched, err := enrichMediaRequest(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 
-	waID, err := u.whatsapp.SendMediaMessage(ctx, tenantID, enriched)
+	waID, err := u.whatsapp.SendMediaMessage(ctx, tenantID, instanceID, enriched)
 	if err != nil {
 		return nil, fmt.Errorf("whatsapp media send: %w", err)
 	}
@@ -198,6 +374,7 @@ func (u *MessageUsecase) SendMediaMessage(ctx context.Context, tenantID string, 
 	msg := &domain.Message{
 		ID:         uuid.NewString(),
 		TenantID:   tenantID,
+		InstanceID: instanceID,
 		WhatsAppID: waID,
 		Phone:      enriched.Phone,
 		Body:       enriched.Caption,
@@ -221,15 +398,223 @@ func (u *MessageUsecase) SendMediaMessage(ctx context.Context, tenantID string, 
 	}()
 
 	u.eventBus.Publish(domain.Event{
-		Type:     domain.EventMessageSent,
-		TenantID: tenantID,
-		Payload:  msg,
+		Type:       domain.EventMessageSent,
+		TenantID:   tenantID,
+		InstanceID: instanceID,
+		Payload:    msg,
 	})
 
 	return &domain.SendMessageResponse{
 		MessageID: msg.ID,
 		Status:    msg.Status,
 	}, nil
+}
+
+func (u *MessageUsecase) SendInteractiveMessage(ctx context.Context, tenantID string, req domain.InteractiveMessageRequest) (*domain.SendMessageResponse, error) {
+	if strings.TrimSpace(req.Body) == "" {
+		return nil, fmt.Errorf("%w: interactive body is required", domain.ErrBadRequest)
+	}
+	instanceID, err := u.resolveInstanceID(ctx, tenantID, req.InstanceID)
+	if err != nil {
+		return nil, err
+	}
+	resolvedPhone, err := u.resolveSingleRecipient(ctx, tenantID, instanceID, req.Phone)
+	if err != nil {
+		return nil, err
+	}
+	req.Phone = resolvedPhone
+	if err := u.billing.CheckLimit(ctx, tenantID); err != nil {
+		return nil, err
+	}
+	waID, err := u.whatsapp.SendInteractiveMessage(ctx, tenantID, instanceID, req)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	msg := &domain.Message{
+		ID:         uuid.NewString(),
+		TenantID:   tenantID,
+		InstanceID: instanceID,
+		WhatsAppID: waID,
+		Phone:      req.Phone,
+		Body:       req.Body,
+		Type:       "interactive_" + strings.ToLower(req.Type),
+		Direction:  "outbound",
+		Status:     domain.MessageStatusSent,
+		SentAt:     now,
+		CreatedAt:  now,
+	}
+	if err := u.msgRepo.Create(ctx, msg); err != nil {
+		u.log.WithContext(ctx).Error("failed to persist interactive message", map[string]interface{}{"err": err.Error()})
+	}
+	go func() { _ = u.billing.TrackSent(context.Background(), tenantID) }()
+	u.eventBus.Publish(domain.Event{Type: domain.EventMessageSent, TenantID: tenantID, InstanceID: instanceID, Payload: msg})
+	return &domain.SendMessageResponse{MessageID: msg.ID, Status: msg.Status}, nil
+}
+
+func (u *MessageUsecase) SendGroupMessage(ctx context.Context, tenantID string, req domain.GroupMessageRequest) (*domain.SendMessageResponse, error) {
+	if strings.TrimSpace(req.Message) == "" || strings.TrimSpace(req.GroupJID) == "" {
+		return nil, fmt.Errorf("%w: group_jid and message are required", domain.ErrBadRequest)
+	}
+	instanceID, err := u.resolveInstanceID(ctx, tenantID, req.InstanceID)
+	if err != nil {
+		return nil, err
+	}
+	if err := u.billing.CheckLimit(ctx, tenantID); err != nil {
+		return nil, err
+	}
+	waID, err := u.whatsapp.SendGroupMessage(ctx, tenantID, instanceID, req)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	msg := &domain.Message{
+		ID:         uuid.NewString(),
+		TenantID:   tenantID,
+		InstanceID: instanceID,
+		WhatsAppID: waID,
+		Phone:      req.GroupJID,
+		Body:       req.Message,
+		Type:       "group_text",
+		Direction:  "outbound",
+		Status:     domain.MessageStatusSent,
+		SentAt:     now,
+		CreatedAt:  now,
+	}
+	if err := u.msgRepo.Create(ctx, msg); err != nil {
+		u.log.WithContext(ctx).Error("failed to persist group message", map[string]interface{}{"err": err.Error()})
+	}
+	go func() { _ = u.billing.TrackSent(context.Background(), tenantID) }()
+	return &domain.SendMessageResponse{MessageID: msg.ID, Status: msg.Status}, nil
+}
+
+func (u *MessageUsecase) PostStatus(ctx context.Context, tenantID string, req domain.StatusMessageRequest) (*domain.SendMessageResponse, error) {
+	instanceID, err := u.resolveInstanceID(ctx, tenantID, req.InstanceID)
+	if err != nil {
+		return nil, err
+	}
+	if req.Type == "" {
+		req.Type = "text"
+	}
+	if req.Type != "text" && req.URL != "" {
+		mediaReq, enrichErr := enrichMediaRequest(ctx, domain.SendMediaMessageRequest{
+			Type:       req.Type,
+			URL:        req.URL,
+			Caption:    req.Caption,
+			FileName:   req.FileName,
+			MimeType:   req.MimeType,
+			InstanceID: req.InstanceID,
+		})
+		if enrichErr != nil {
+			return nil, enrichErr
+		}
+		req.FileName = mediaReq.FileName
+		req.MimeType = mediaReq.MimeType
+		req.Data = mediaReq.Data
+	}
+	waID, err := u.whatsapp.PostStatus(ctx, tenantID, instanceID, req)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	msg := &domain.Message{
+		ID:         uuid.NewString(),
+		TenantID:   tenantID,
+		InstanceID: instanceID,
+		WhatsAppID: waID,
+		Phone:      "status@broadcast",
+		Body:       req.Message,
+		Type:       "status_" + req.Type,
+		Direction:  "outbound",
+		Status:     domain.MessageStatusSent,
+		SentAt:     now,
+		CreatedAt:  now,
+	}
+	if err := u.msgRepo.Create(ctx, msg); err != nil {
+		u.log.WithContext(ctx).Error("failed to persist status message", map[string]interface{}{"err": err.Error()})
+	}
+	return &domain.SendMessageResponse{MessageID: msg.ID, Status: msg.Status}, nil
+}
+
+func (u *MessageUsecase) ListGroups(ctx context.Context, tenantID, requestedInstanceID string) ([]domain.Group, error) {
+	instanceID, err := u.resolveInstanceID(ctx, tenantID, requestedInstanceID)
+	if err != nil {
+		return nil, err
+	}
+	return u.whatsapp.ListGroups(ctx, tenantID, instanceID)
+}
+
+func (u *MessageUsecase) resolveSingleRecipient(ctx context.Context, tenantID, instanceID, rawPhone string) (string, error) {
+	normalized, err := normalizePhone(rawPhone)
+	if err != nil {
+		return "", err
+	}
+
+	contacts, err := u.whatsapp.ResolveContacts(ctx, tenantID, instanceID, []string{normalized})
+	if err != nil {
+		return "", err
+	}
+	if len(contacts) == 0 {
+		return "", fmt.Errorf("%w: phone could not be resolved on WhatsApp", domain.ErrInvalidPhone)
+	}
+	resolved := contacts[0]
+	if !resolved.IsWhatsApp {
+		return "", fmt.Errorf("%w: phone is not registered on WhatsApp", domain.ErrInvalidPhone)
+	}
+	if resolved.Phone == "" {
+		return normalized, nil
+	}
+	return resolved.Phone, nil
+}
+
+func (u *MessageUsecase) resolveInstanceID(ctx context.Context, tenantID, requestedInstanceID string) (string, error) {
+	if requestedInstanceID != "" {
+		instance, err := u.instanceRepo.GetByID(ctx, requestedInstanceID)
+		if err != nil {
+			return "", err
+		}
+		if instance.TenantID != tenantID {
+			return "", domain.ErrInstanceNotFound
+		}
+		return instance.ID, nil
+	}
+	instance, err := u.instanceRepo.GetDefaultByTenant(ctx, tenantID)
+	if err != nil {
+		return "", err
+	}
+	return instance.ID, nil
+}
+
+func normalizePhoneInputs(inputs []string) ([]string, map[string]string, error) {
+	if len(inputs) == 0 {
+		return nil, nil, fmt.Errorf("%w: at least one phone is required", domain.ErrBadRequest)
+	}
+	normalized := make([]string, 0, len(inputs))
+	originalByNormalized := make(map[string]string, len(inputs))
+	for _, raw := range inputs {
+		phone, err := normalizePhone(raw)
+		if err != nil {
+			return nil, nil, err
+		}
+		if _, ok := originalByNormalized[phone]; ok {
+			continue
+		}
+		normalized = append(normalized, phone)
+		originalByNormalized[phone] = strings.TrimSpace(raw)
+	}
+	return normalized, originalByNormalized, nil
+}
+
+func normalizePhone(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", domain.ErrInvalidPhone
+	}
+	digits := nonDigitPattern.ReplaceAllString(trimmed, "")
+	if !phoneRegex.MatchString(digits) {
+		return "", domain.ErrInvalidPhone
+	}
+	return digits, nil
 }
 
 func enrichMediaRequest(ctx context.Context, req domain.SendMediaMessageRequest) (domain.SendMediaMessageRequest, error) {

@@ -38,6 +38,7 @@ func (h *MessageHandler) Send(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	req.InstanceID = middleware.InstanceFromCtx(r.Context())
 	resp, err := h.msgUC.SendMessage(r.Context(), tenantID, req)
 	if err != nil {
 		httputil.DomainError(w, err)
@@ -65,6 +66,7 @@ func (h *MessageHandler) SendMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	req.InstanceID = middleware.InstanceFromCtx(r.Context())
 	resp, err := h.msgUC.SendMediaMessage(r.Context(), tenantID, req)
 	if err != nil {
 		httputil.DomainError(w, err)
@@ -80,6 +82,133 @@ func (h *MessageHandler) SendMedia(w http.ResponseWriter, r *http.Request) {
 	httputil.JSON(w, http.StatusOK, resp)
 }
 
+func (h *MessageHandler) SendInteractive(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.TenantFromCtx(r.Context())
+	if tenantID == "" {
+		httputil.Error(w, http.StatusUnauthorized, "missing tenant context")
+		return
+	}
+	var req domain.InteractiveMessageRequest
+	if err := httputil.Decode(r, &req); err != nil {
+		httputil.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	req.InstanceID = middleware.InstanceFromCtx(r.Context())
+	resp, err := h.msgUC.SendInteractiveMessage(r.Context(), tenantID, req)
+	if err != nil {
+		httputil.DomainError(w, err)
+		return
+	}
+	httputil.JSON(w, http.StatusOK, resp)
+}
+
+func (h *MessageHandler) SendGroup(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.TenantFromCtx(r.Context())
+	if tenantID == "" {
+		httputil.Error(w, http.StatusUnauthorized, "missing tenant context")
+		return
+	}
+	var req domain.GroupMessageRequest
+	if err := httputil.Decode(r, &req); err != nil {
+		httputil.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	req.InstanceID = middleware.InstanceFromCtx(r.Context())
+	resp, err := h.msgUC.SendGroupMessage(r.Context(), tenantID, req)
+	if err != nil {
+		httputil.DomainError(w, err)
+		return
+	}
+	httputil.JSON(w, http.StatusOK, resp)
+}
+
+func (h *MessageHandler) StatusPost(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.TenantFromCtx(r.Context())
+	if tenantID == "" {
+		httputil.Error(w, http.StatusUnauthorized, "missing tenant context")
+		return
+	}
+	var req domain.StatusMessageRequest
+	if err := httputil.Decode(r, &req); err != nil {
+		httputil.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	req.InstanceID = middleware.InstanceFromCtx(r.Context())
+	resp, err := h.msgUC.PostStatus(r.Context(), tenantID, req)
+	if err != nil {
+		httputil.DomainError(w, err)
+		return
+	}
+	httputil.JSON(w, http.StatusOK, resp)
+}
+
+func (h *MessageHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.TenantFromCtx(r.Context())
+	if tenantID == "" {
+		httputil.Error(w, http.StatusUnauthorized, "missing tenant context")
+		return
+	}
+	resp, err := h.msgUC.ListGroups(r.Context(), tenantID, middleware.InstanceFromCtx(r.Context()))
+	if err != nil {
+		httputil.DomainError(w, err)
+		return
+	}
+	httputil.JSON(w, http.StatusOK, resp)
+}
+
+func (h *MessageHandler) ResolveContacts(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.TenantFromCtx(r.Context())
+	if tenantID == "" {
+		httputil.Error(w, http.StatusUnauthorized, "missing tenant context")
+		return
+	}
+
+	var req domain.ResolveContactsRequest
+	if err := httputil.Decode(r, &req); err != nil {
+		httputil.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	req.InstanceID = middleware.InstanceFromCtx(r.Context())
+	resp, err := h.msgUC.ResolveContacts(r.Context(), tenantID, req)
+	if err != nil {
+		httputil.DomainError(w, err)
+		return
+	}
+	h.log.WithContext(r.Context()).Audit("contacts.resolve", map[string]interface{}{
+		"count": len(resp),
+	})
+	httputil.JSON(w, http.StatusOK, resp)
+}
+
+func (h *MessageHandler) SendBulk(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.TenantFromCtx(r.Context())
+	if tenantID == "" {
+		httputil.Error(w, http.StatusUnauthorized, "missing tenant context")
+		return
+	}
+
+	var req domain.BulkSendMessageRequest
+	if err := httputil.Decode(r, &req); err != nil {
+		httputil.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	req.InstanceID = middleware.InstanceFromCtx(r.Context())
+	resp, err := h.msgUC.SendBulkMessage(r.Context(), tenantID, req)
+	if err != nil {
+		httputil.DomainError(w, err)
+		return
+	}
+	h.log.WithContext(r.Context()).Audit("message.send_bulk", map[string]interface{}{
+		"total":    resp.Total,
+		"accepted": resp.Accepted,
+		"sent":     resp.Sent,
+		"failed":   resp.Failed,
+	})
+	httputil.JSON(w, http.StatusOK, resp)
+}
+
 func (h *MessageHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.TenantFromCtx(r.Context())
 	if tenantID == "" {
@@ -87,12 +216,45 @@ func (h *MessageHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := h.msgUC.ListMessages(r.Context(), tenantID, r.URL.Query())
+	resp, err := h.msgUC.ListMessages(r.Context(), tenantID, middleware.InstanceFromCtx(r.Context()), r.URL.Query())
 	if err != nil {
 		httputil.DomainError(w, err)
 		return
 	}
 
+	httputil.JSON(w, http.StatusOK, resp)
+}
+
+func (h *MessageHandler) ListConversations(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.TenantFromCtx(r.Context())
+	if tenantID == "" {
+		httputil.Error(w, http.StatusUnauthorized, "missing tenant context")
+		return
+	}
+	resp, err := h.msgUC.ListConversations(r.Context(), tenantID, middleware.InstanceFromCtx(r.Context()), r.URL.Query())
+	if err != nil {
+		httputil.DomainError(w, err)
+		return
+	}
+	httputil.JSON(w, http.StatusOK, resp)
+}
+
+func (h *MessageHandler) UpdateConversation(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.TenantFromCtx(r.Context())
+	if tenantID == "" {
+		httputil.Error(w, http.StatusUnauthorized, "missing tenant context")
+		return
+	}
+	var req domain.UpdateConversationRequest
+	if err := httputil.Decode(r, &req); err != nil {
+		httputil.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	resp, err := h.msgUC.UpdateConversation(r.Context(), tenantID, middleware.InstanceFromCtx(r.Context()), r.PathValue("phone"), req)
+	if err != nil {
+		httputil.DomainError(w, err)
+		return
+	}
 	httputil.JSON(w, http.StatusOK, resp)
 }
 
@@ -103,7 +265,7 @@ func (h *MessageHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := h.msgUC.GetMessage(r.Context(), tenantID, r.PathValue("id"))
+	resp, err := h.msgUC.GetMessage(r.Context(), tenantID, middleware.InstanceFromCtx(r.Context()), r.PathValue("id"))
 	if err != nil {
 		httputil.DomainError(w, err)
 		return
@@ -119,7 +281,7 @@ func (h *MessageHandler) GetMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := h.msgUC.GetMessageMedia(r.Context(), tenantID, r.PathValue("id"))
+	resp, err := h.msgUC.GetMessageMedia(r.Context(), tenantID, middleware.InstanceFromCtx(r.Context()), r.PathValue("id"))
 	if err != nil {
 		httputil.DomainError(w, err)
 		return

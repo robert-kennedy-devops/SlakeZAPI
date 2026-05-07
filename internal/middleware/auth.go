@@ -30,6 +30,9 @@ func Auth(authUC *usecase.AuthUsecase, log *logger.Logger) func(http.Handler) ht
 
 			// Inject tenant ID into context
 			ctx := context.WithValue(r.Context(), tenantCtxKey{}, key.TenantID)
+			if instanceID := requestedInstanceID(r); instanceID != "" {
+				ctx = context.WithValue(ctx, instanceCtxKey{}, instanceID)
+			}
 			ctx = logger.WithTenantID(ctx, key.TenantID)
 
 			next.ServeHTTP(w, r.WithContext(ctx))
@@ -43,10 +46,24 @@ func TenantFromCtx(ctx context.Context) string {
 	return v
 }
 
+type instanceCtxKey struct{}
+
+func InstanceFromCtx(ctx context.Context) string {
+	v, _ := ctx.Value(instanceCtxKey{}).(string)
+	return v
+}
+
 func extractBearer(r *http.Request) string {
 	h := r.Header.Get("Authorization")
 	if strings.HasPrefix(h, "Bearer ") {
 		return strings.TrimPrefix(h, "Bearer ")
 	}
-	return ""
+	return strings.TrimSpace(r.URL.Query().Get("access_token"))
+}
+
+func requestedInstanceID(r *http.Request) string {
+	if instanceID := strings.TrimSpace(r.Header.Get("X-Instance-ID")); instanceID != "" {
+		return instanceID
+	}
+	return strings.TrimSpace(r.URL.Query().Get("instance_id"))
 }

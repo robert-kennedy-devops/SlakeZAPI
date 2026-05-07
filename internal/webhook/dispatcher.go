@@ -64,7 +64,7 @@ func (d *Dispatcher) Start(ctx context.Context) {
 }
 
 func (d *Dispatcher) dispatch(ctx context.Context, evt domain.Event) {
-	hooks, err := d.webhookRepo.GetByTenant(ctx, evt.TenantID)
+	hooks, err := d.webhookRepo.GetByTenant(ctx, evt.TenantID, evt.InstanceID)
 	if err != nil || len(hooks) == 0 {
 		return
 	}
@@ -77,6 +77,7 @@ func (d *Dispatcher) dispatch(ctx context.Context, evt domain.Event) {
 
 		d.pool.Enqueue(queue.Job{
 			ID:      fmt.Sprintf("%s-%s", wh.ID, evt.Type),
+			Kind:    "webhook",
 			Payload: deliveryPayload{webhook: wh, event: evt},
 			Handler: d.deliverHandler,
 		})
@@ -96,12 +97,13 @@ func (d *Dispatcher) deliverHandler(ctx context.Context, raw interface{}) error 
 // Deliver performs a single HTTP POST attempt to the webhook URL.
 func (d *Dispatcher) Deliver(ctx context.Context, wh domain.Webhook, evt domain.Event) error {
 	envelope := domain.WebhookEnvelope{
-		ID:        uuid.NewString(),
-		Version:   "v1",
-		Type:      evt.Type,
-		TenantID:  evt.TenantID,
-		Timestamp: time.Now().UTC(),
-		Payload:   evt.Payload,
+		ID:         uuid.NewString(),
+		Version:    "v1",
+		Type:       evt.Type,
+		TenantID:   evt.TenantID,
+		InstanceID: evt.InstanceID,
+		Timestamp:  time.Now().UTC(),
+		Payload:    evt.Payload,
 	}
 
 	body, err := json.Marshal(envelope)

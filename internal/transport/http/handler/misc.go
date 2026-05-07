@@ -46,6 +46,7 @@ func (h *WebhookHandler) Register(w http.ResponseWriter, r *http.Request) {
 		req.Events = []string{"message.received", "message.sent", "message.status", "connection.update"}
 	}
 
+	req.InstanceID = middleware.InstanceFromCtx(r.Context())
 	wh, err := h.webhookUC.Register(r.Context(), tenantID, req)
 	if err != nil {
 		httputil.DomainError(w, err)
@@ -65,7 +66,7 @@ func (h *WebhookHandler) Register(w http.ResponseWriter, r *http.Request) {
 func (h *WebhookHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.TenantFromCtx(r.Context())
 
-	hooks, err := h.webhookUC.ListByTenant(r.Context(), tenantID)
+	hooks, err := h.webhookUC.ListByTenant(r.Context(), tenantID, middleware.InstanceFromCtx(r.Context()))
 	if err != nil {
 		httputil.DomainError(w, err)
 		return
@@ -81,7 +82,7 @@ func (h *WebhookHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.webhookUC.Delete(r.Context(), tenantID, r.PathValue("id")); err != nil {
+	if err := h.webhookUC.Delete(r.Context(), tenantID, middleware.InstanceFromCtx(r.Context()), r.PathValue("id")); err != nil {
 		httputil.DomainError(w, err)
 		return
 	}

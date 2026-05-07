@@ -8,7 +8,8 @@
 
 # Go build cache
 /vendor/
-go.sum
+/web/node_modules/
+/web/.next/
 
 # Environment
 .env
