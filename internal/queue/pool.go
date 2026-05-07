@@ -92,7 +92,9 @@ func (p *Pool) Enqueue(job Job) bool {
 }
 
 func (p *Pool) Stats() (jobs int, deadLetters int, workers int) {
-	return len(p.jobs), len(p.deadLetter), p.workerN
+	p.historyMu.Lock()
+	defer p.historyMu.Unlock()
+	return len(p.jobs), len(p.deadStore), p.workerN
 }
 
 func (p *Pool) Snapshot() domain.QueueSnapshot {
@@ -123,11 +125,10 @@ func (p *Pool) Snapshot() domain.QueueSnapshot {
 			UpdatedAt: item.UpdatedAt,
 		})
 	}
-	jobs, deadLetters, workers := p.Stats()
 	return domain.QueueSnapshot{
-		Jobs:         jobs,
-		DeadLetters:  deadLetters,
-		Workers:      workers,
+		Jobs:         len(p.jobs),
+		DeadLetters:  len(p.deadStore),
+		Workers:      p.workerN,
 		Recent:       recent,
 		DeadLettered: dead,
 	}

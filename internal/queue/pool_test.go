@@ -46,6 +46,10 @@ func TestPoolRequeueDeadLetter(t *testing.T) {
 	if len(pool.DeadLetters(10)) != 1 {
 		t.Fatalf("expected one dead-letter item, got %d", len(pool.DeadLetters(10)))
 	}
+	_, deadLetters, _ := pool.Stats()
+	if deadLetters != 1 {
+		t.Fatalf("expected Stats deadLetters=1, got %d", deadLetters)
+	}
 
 	if err := pool.RequeueDeadLetter("job-dead-1"); err != nil {
 		t.Fatalf("requeue dead letter: %v", err)
@@ -59,6 +63,10 @@ func TestPoolRequeueDeadLetter(t *testing.T) {
 
 	if len(pool.DeadLetters(10)) != 0 {
 		t.Fatalf("expected dead-letter store to be empty after requeue, got %d", len(pool.DeadLetters(10)))
+	}
+	_, deadLetters, _ = pool.Stats()
+	if deadLetters != 0 {
+		t.Fatalf("expected Stats deadLetters=0 after requeue, got %d", deadLetters)
 	}
 }
 
