@@ -179,10 +179,29 @@ func (m *Manager) Logout(ctx context.Context, tenantID, instanceID string) error
 		sess.qrCancel()
 		sess.qrCancel = nil
 	}
-	if err := sess.client.Logout(ctx); err != nil {
-		return fmt.Errorf("whatsapp logout: %w", err)
+	logoutErr := sess.client.Logout(ctx)
+	if logoutErr != nil {
+		m.log.WithContext(ctx).Warn("whatsapp logout failed, forcing local cleanup", map[string]interface{}{
+			"tenant_id":    tenantID,
+			"instance_id":  instanceID,
+			"logout_error": logoutErr.Error(),
+		})
+		sess.client.Disconnect()
+		if sess.client.Store != nil && sess.client.Store.ID != nil {
+			if err := sess.client.Store.Delete(ctx); err != nil {
+				m.log.WithContext(ctx).Warn("whatsapp local store delete failed", map[string]interface{}{
+					"tenant_id":   tenantID,
+					"instance_id": instanceID,
+					"err":         err.Error(),
+				})
+			}
+		}
 	}
-	if err := m.sessionRepo.Delete(ctx, instanceID); err != nil {
+	return m.forgetSession(ctx, tenantID, instanceID, sess)
+}
+
+func (m *Manager) forgetSession(ctx context.Context, tenantID, instanceID string, sess *session) error {
+	if err := m.sessionRepo.Delete(ctx, instanceID); err != nil && !errors.Is(err, domain.ErrSessionMetadataNotFound) {
 		return err
 	}
 
@@ -190,6 +209,8 @@ func (m *Manager) Logout(ctx context.Context, tenantID, instanceID string) error
 	delete(m.sessions, instanceID)
 	m.mu.Unlock()
 
+	now := time.Now().UTC()
+	_ = m.instanceRepo.UpdateStatus(ctx, instanceID, domain.SessionStatusDisconnected, "", now)
 	m.eventBus.Publish(domain.Event{
 		Type:       domain.EventConnectionUpdate,
 		TenantID:   tenantID,
