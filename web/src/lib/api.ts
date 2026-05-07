@@ -39,6 +39,11 @@ type RequestOptions = {
   skipRefresh?: boolean;
 };
 
+type APIErrorPayload = {
+  error?: string;
+  message?: string;
+};
+
 export function getAPIBaseURL() {
   if (typeof window !== "undefined") {
     return process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
@@ -83,7 +88,7 @@ async function request<T>(
   }
 
   if (!response.ok) {
-    const message = await response.text();
+    const message = await readErrorMessage(response);
     throw new Error(message || `request failed with status ${response.status}`);
   }
 
@@ -91,6 +96,19 @@ async function request<T>(
     return undefined as T;
   }
   return response.json() as Promise<T>;
+}
+
+async function readErrorMessage(response: Response) {
+  const contentType = response.headers.get("Content-Type") ?? "";
+  if (contentType.includes("application/json")) {
+    const payload = (await response.json().catch(() => null)) as
+      | APIErrorPayload
+      | null;
+    if (payload?.error) return payload.error;
+    if (payload?.message) return payload.message;
+  }
+
+  return response.text();
 }
 
 let refreshPromise: Promise<UserSessionResponse> | null = null;

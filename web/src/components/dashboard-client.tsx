@@ -97,6 +97,8 @@ const ROLE_LABELS: Record<UserRole, string> = {
   viewer: "Viewer",
 };
 
+const PHONE_PATTERN = /(?:\+?\d[\d\s().-]{7,}\d)/g;
+
 export function DashboardClient() {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -392,10 +394,7 @@ export function DashboardClient() {
   const resolveContacts = useMutation({
     mutationFn: async () =>
       api.resolveContacts(token, tenantHeader, instanceHeader, {
-        phones: contactInput
-          .split(/\r?\n|,|;/)
-          .map((item) => item.trim())
-          .filter(Boolean),
+        phones: parsedContactPhones,
       }),
     onSuccess: (contacts) => {
       setResolvedContacts(contacts);
@@ -430,11 +429,7 @@ export function DashboardClient() {
         scheduled_at: campaignForm.scheduledAt
           ? new Date(campaignForm.scheduledAt).toISOString()
           : undefined,
-        recipients: contactInput
-          .split(/\r?\n/)
-          .map((item) => item.trim())
-          .filter(Boolean)
-          .map((phone) => ({ phone })),
+        recipients: parsedContactPhones.map((phone) => ({ phone })),
       }),
     onSuccess: () => {
       setCampaignForm({ name: "", message: "", scheduledAt: "" });
@@ -612,8 +607,7 @@ export function DashboardClient() {
   }
 
   function handleMutationError(error: unknown) {
-    const message =
-      error instanceof Error ? error.message : "Falha inesperada.";
+    const message = extractErrorMessage(error);
     setFlash(message);
   }
 
@@ -674,6 +668,13 @@ export function DashboardClient() {
       (membership) => membership.tenant_id === tenantHeader,
     ) ?? currentUser?.membership;
   const usage = usageQuery.data;
+  const parsedContactPhones = useMemo(
+    () => extractPhonesFromText(contactInput),
+    [contactInput],
+  );
+  const groupsErrorMessage = groupsQuery.error
+    ? extractErrorMessage(groupsQuery.error)
+    : "";
   const usagePercent = useMemo(() => {
     const limit =
       summaryQuery.data?.plan?.plan_id === "plan_pro"
@@ -1300,8 +1301,16 @@ export function DashboardClient() {
                       </span>
                     </button>
                   ))}
-                  {!groupsQuery.data?.length ? (
-                    <EmptyState label="Conecte a instancia para listar grupos." />
+                  {groupsQuery.isLoading ? (
+                    <EmptyState label="Carregando grupos da instancia..." />
+                  ) : null}
+                  {!groupsQuery.isLoading && groupsErrorMessage ? (
+                    <EmptyState label={`Grupos indisponiveis: ${groupsErrorMessage}`} />
+                  ) : null}
+                  {!groupsQuery.isLoading &&
+                  !groupsErrorMessage &&
+                  !groupsQuery.data?.length ? (
+                    <EmptyState label="Nenhum grupo encontrado para esta instancia." />
                   ) : null}
                 </div>
               </FormPanel>
@@ -1329,8 +1338,16 @@ export function DashboardClient() {
                   </label>
                   <button
                     className="button-secondary"
-                    disabled={resolveContacts.isPending}
-                    onClick={() => resolveContacts.mutate()}
+                    disabled={
+                      resolveContacts.isPending || parsedContactPhones.length === 0
+                    }
+                    onClick={() => {
+                      if (!parsedContactPhones.length) {
+                        notify("Adicione pelo menos um telefone valido para reconhecer.");
+                        return;
+                      }
+                      resolveContacts.mutate();
+                    }}
                     type="button"
                   >
                     Reconhecer contatos
@@ -1374,6 +1391,7 @@ export function DashboardClient() {
                     onChange={(event) => setBulkMessage(event.target.value)}
                   />
                   <div className="flex flex-wrap gap-3 text-xs text-slate-400">
+                    <span>{parsedContactPhones.length} numeros detectados</span>
                     <span>{resolvedContacts.length} contatos analisados</span>
                     <span>{selectedBulkPhones.length} selecionados</span>
                   </div>
@@ -1708,7 +1726,7 @@ export function DashboardClient() {
                     createCampaign.isPending ||
                     !campaignForm.name.trim() ||
                     !campaignForm.message.trim() ||
-                    !contactInput.trim()
+                    parsedContactPhones.length === 0
                   }
                   onClick={() => createCampaign.mutate()}
                   type="button"
@@ -2329,23 +2347,26 @@ function LoadingScreen({
 }
 
 function parsePhonesFromCSV(content: string) {
-  const lines = content
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  if (!lines.length) return [];
+  return extractPhonesFromText(content);
+}
 
-  const phonePattern = /(?:\+?\d[\d\s().-]{7,}\d)/g;
+function extractPhonesFromText(content: string) {
   const phones = new Set<string>();
-  for (const line of lines) {
-    const matches = line.match(phonePattern);
-    if (!matches?.length) continue;
-    for (const match of matches) {
-      phones.add(match.trim());
+  const matches = content.match(PHONE_PATTERN) ?? [];
+  for (const match of matches) {
+    const trimmed = match.trim();
+    if (trimmed) {
+      phones.add(trimmed);
     }
   }
-
   return Array.from(phones);
+}
+
+function extractErrorMessage(error: unknown) {
+  if (!(error instanceof Error) || !error.message.trim()) {
+    return "Falha inesperada.";
+  }
+  return error.message.trim();
 }
 
 function buildInteractivePayload(form: {
