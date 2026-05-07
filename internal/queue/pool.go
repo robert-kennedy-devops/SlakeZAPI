@@ -2,6 +2,7 @@ package queue
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"sync"
 	"time"
@@ -15,7 +16,7 @@ type Job struct {
 	ID      string
 	Kind    string
 	Payload interface{}
-	Handler func(ctx context.Context, payload interface{}) error
+	Handler func(ctx context.Context, payload interface{}, attempt int) error
 	Attempt int
 }
 
@@ -30,6 +31,7 @@ type Pool struct {
 	historyMu  sync.Mutex
 	recent     []historyEntry
 	deadRecent []historyEntry
+	deadStore  map[string]Job
 }
 
 type historyEntry struct {
@@ -50,6 +52,7 @@ func NewPool(workerN, bufferSize, maxRetries int, log *logger.Logger) *Pool {
 		workerN:    workerN,
 		maxRetries: maxRetries,
 		log:        log,
+		deadStore:  make(map[string]Job),
 	}
 	return p
 }
@@ -130,6 +133,69 @@ func (p *Pool) Snapshot() domain.QueueSnapshot {
 	}
 }
 
+func (p *Pool) DeadLetters(limit int) []domain.QueueJobView {
+	p.historyMu.Lock()
+	defer p.historyMu.Unlock()
+
+	if limit <= 0 || limit > len(p.deadRecent) {
+		limit = len(p.deadRecent)
+	}
+	items := make([]domain.QueueJobView, 0, limit)
+	for _, item := range p.deadRecent[:limit] {
+		items = append(items, domain.QueueJobView{
+			ID:        item.ID,
+			Kind:      item.Kind,
+			Attempt:   item.Attempt,
+			Status:    item.Status,
+			Error:     item.Error,
+			CreatedAt: item.CreatedAt,
+			UpdatedAt: item.UpdatedAt,
+		})
+	}
+	return items
+}
+
+func (p *Pool) RequeueDeadLetter(id string) error {
+	p.historyMu.Lock()
+	job, ok := p.deadStore[id]
+	if ok {
+		delete(p.deadStore, id)
+		for idx, item := range p.deadRecent {
+			if item.ID == id {
+				p.deadRecent = append(p.deadRecent[:idx], p.deadRecent[idx+1:]...)
+				break
+			}
+		}
+	}
+	p.historyMu.Unlock()
+
+	if !ok {
+		return domain.ErrQueueJobNotFound
+	}
+
+	job.Attempt = 0
+	if !p.Enqueue(job) {
+		p.historyMu.Lock()
+		p.deadStore[id] = job
+		p.deadRecent = append([]historyEntry{{
+			ID:        job.ID,
+			Kind:      job.Kind,
+			Attempt:   job.Attempt,
+			Status:    "dead-letter",
+			Error:     "queue full during requeue",
+			CreatedAt: time.Now().UTC(),
+			UpdatedAt: time.Now().UTC(),
+		}}, p.deadRecent...)
+		if len(p.deadRecent) > 25 {
+			p.deadRecent = p.deadRecent[:25]
+		}
+		p.historyMu.Unlock()
+		return fmt.Errorf("%w: queue full", domain.ErrConflict)
+	}
+	p.track(job, "requeued", "")
+	return nil
+}
+
 // ─── internal ────────────────────────────────────────────────────────────────
 
 func (p *Pool) worker(ctx context.Context, id int) {
@@ -141,41 +207,43 @@ func (p *Pool) worker(ctx context.Context, id int) {
 }
 
 func (p *Pool) process(ctx context.Context, job Job) {
-	p.track(job, "processing", "")
-	err := job.Handler(ctx, job.Payload)
+	attempt := job.Attempt + 1
+	working := job
+	working.Attempt = attempt
+	p.track(working, "processing", "")
+	err := job.Handler(ctx, job.Payload, attempt)
 	if err == nil {
-		p.track(job, "done", "")
+		p.track(working, "done", "")
 		return
 	}
 
-	job.Attempt++
-	if job.Attempt >= p.maxRetries {
-		p.track(job, "dead-letter", err.Error())
+	if attempt >= p.maxRetries {
+		p.track(working, "dead-letter", err.Error())
 		p.log.Error("job moved to dead-letter", map[string]interface{}{
-			"job_id":  job.ID,
-			"attempt": job.Attempt,
+			"job_id":  working.ID,
+			"attempt": working.Attempt,
 			"err":     err.Error(),
 		})
 		select {
-		case p.deadLetter <- job:
+		case p.deadLetter <- working:
 		default:
 		}
 		return
 	}
 
 	// Exponential backoff: 1s, 2s, 4s …
-	delay := time.Duration(math.Pow(2, float64(job.Attempt))) * time.Second
+	delay := time.Duration(math.Pow(2, float64(attempt))) * time.Second
 
 	p.log.Warn("job failed, retrying", map[string]interface{}{
-		"job_id":  job.ID,
-		"attempt": job.Attempt,
+		"job_id":  working.ID,
+		"attempt": working.Attempt,
 		"delay":   delay.String(),
 		"err":     err.Error(),
 	})
-	p.track(job, "retrying", err.Error())
+	p.track(working, "retrying", err.Error())
 
 	time.AfterFunc(delay, func() {
-		p.Enqueue(job)
+		p.Enqueue(working)
 	})
 }
 
@@ -198,6 +266,7 @@ func (p *Pool) track(job Job, status, errText string) {
 		p.recent = p.recent[:50]
 	}
 	if status == "dead-letter" {
+		p.deadStore[job.ID] = job
 		p.deadRecent = append([]historyEntry{entry}, p.deadRecent...)
 		if len(p.deadRecent) > 25 {
 			p.deadRecent = p.deadRecent[:25]

@@ -28,6 +28,7 @@ func NewRouter(
 	instanceUC *usecase.InstanceUsecase,
 	campaignUC *usecase.CampaignUsecase,
 	opsUC *usecase.OperationsUsecase,
+	auditUC *usecase.AuditUsecase,
 	hub *ws.Hub,
 	metrics *observability.Metrics,
 	startedAt time.Time,
@@ -56,6 +57,7 @@ func NewRouter(
 	instanceH := handler.NewInstanceHandler(instanceUC, log)
 	campaignH := handler.NewCampaignHandler(campaignUC, log)
 	opsH := handler.NewOperationsHandler(opsUC)
+	auditH := handler.NewAuditHandler(auditUC)
 	docsH := handler.NewDocsHandler()
 	obsH := handler.NewObservabilityHandler(db, pool, metrics, startedAt)
 
@@ -82,6 +84,7 @@ func NewRouter(
 	mux.HandleFunc("GET /readyz", obsH.Readyz)
 	mux.HandleFunc("GET /livez", obsH.Livez)
 	mux.Handle("GET /metrics", metrics.Handler())
+	mux.HandleFunc("GET /docs", docsH.Index)
 	mux.HandleFunc("GET /docs/{name}", docsH.Serve)
 	mux.HandleFunc("POST /auth/bootstrap", authH.Bootstrap)
 	mux.HandleFunc("POST /app/auth/signup", userAuthH.SignUp)
@@ -128,8 +131,13 @@ func NewRouter(
 	mux.Handle("POST /app/webhooks", withUserRole(hookH.Register, domain.UserRoleOwner, domain.UserRoleAdmin))
 	mux.Handle("GET /app/webhooks", withUserRole(hookH.List, domain.UserRoleOwner, domain.UserRoleAdmin, domain.UserRoleOperator, domain.UserRoleViewer))
 	mux.Handle("DELETE /app/webhooks/{id}", withUserRole(hookH.Delete, domain.UserRoleOwner, domain.UserRoleAdmin))
+	mux.Handle("GET /app/webhooks/deliveries", withUserRole(hookH.ListDeliveries, domain.UserRoleOwner, domain.UserRoleAdmin, domain.UserRoleOperator, domain.UserRoleViewer))
+	mux.Handle("POST /app/webhooks/deliveries/{id}/replay", withUserRole(hookH.ReplayDelivery, domain.UserRoleOwner, domain.UserRoleAdmin, domain.UserRoleOperator))
 	mux.Handle("GET /app/usage", withUserRole(hookH.Usage, domain.UserRoleOwner, domain.UserRoleAdmin, domain.UserRoleOperator, domain.UserRoleViewer))
 	mux.Handle("GET /app/queue", withUserRole(opsH.Queue, domain.UserRoleOwner, domain.UserRoleAdmin, domain.UserRoleOperator, domain.UserRoleViewer))
+	mux.Handle("GET /app/queue/dead-letters", withUserRole(opsH.DeadLetters, domain.UserRoleOwner, domain.UserRoleAdmin, domain.UserRoleOperator, domain.UserRoleViewer))
+	mux.Handle("POST /app/queue/dead-letters/{id}/requeue", withUserRole(opsH.RequeueDeadLetter, domain.UserRoleOwner, domain.UserRoleAdmin, domain.UserRoleOperator))
+	mux.Handle("GET /app/audit", withUserRole(auditH.List, domain.UserRoleOwner, domain.UserRoleAdmin))
 	mux.Handle("GET /app/ws", withUserRole(hub.ServeHTTP, domain.UserRoleOwner, domain.UserRoleAdmin, domain.UserRoleOperator, domain.UserRoleViewer))
 
 	// Auth (requires existing API key to create a new one)
@@ -170,8 +178,13 @@ func NewRouter(
 	mux.Handle("POST /webhook", withAuth(hookH.Register))
 	mux.Handle("GET /webhook", withAuth(hookH.List))
 	mux.Handle("DELETE /webhook/{id}", withAuth(hookH.Delete))
+	mux.Handle("GET /webhook/deliveries", withAuth(hookH.ListDeliveries))
+	mux.Handle("POST /webhook/deliveries/{id}/replay", withAuth(hookH.ReplayDelivery))
 	mux.Handle("GET /usage", withAuth(hookH.Usage))
 	mux.Handle("GET /queue", withAuth(opsH.Queue))
+	mux.Handle("GET /queue/dead-letters", withAuth(opsH.DeadLetters))
+	mux.Handle("POST /queue/dead-letters/{id}/requeue", withAuth(opsH.RequeueDeadLetter))
+	mux.Handle("GET /audit", withAuth(auditH.List))
 
 	// WebSocket
 	mux.Handle("GET /ws", withAuth(hub.ServeHTTP))

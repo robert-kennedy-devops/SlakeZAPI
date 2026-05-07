@@ -56,9 +56,181 @@ func (r *webhookRepo) GetByTenant(ctx context.Context, tenantID, instanceID stri
 	return out, rows.Err()
 }
 
+func (r *webhookRepo) GetByID(ctx context.Context, id string) (*domain.Webhook, error) {
+	q := `SELECT id, tenant_id, instance_id, url, events, secret, active, created_at FROM webhooks WHERE id = $1`
+	wh := &domain.Webhook{}
+	var events string
+	var dbInstanceID sql.NullString
+	err := r.db.QueryRowContext(ctx, q, id).Scan(
+		&wh.ID, &wh.TenantID, &dbInstanceID, &wh.URL, &events, &wh.Secret, &wh.Active, &wh.CreatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, domain.ErrWebhookNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("webhookRepo.GetByID: %w", err)
+	}
+	wh.InstanceID = dbInstanceID.String
+	wh.Events = strings.Split(events, ",")
+	return wh, nil
+}
+
 func (r *webhookRepo) Delete(ctx context.Context, id string) error {
 	_, err := r.db.ExecContext(ctx, `UPDATE webhooks SET active=false WHERE id=$1`, id)
 	return err
+}
+
+func (r *webhookRepo) CreateDelivery(ctx context.Context, delivery *domain.WebhookDelivery) error {
+	q := `
+		INSERT INTO webhook_deliveries (
+			id, webhook_id, tenant_id, instance_id, event_type, webhook_url, status,
+			attempts, response_status, response_body, last_error, payload_json,
+			delivered_at, last_attempt_at, created_at, updated_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+	`
+	_, err := r.db.ExecContext(ctx, q,
+		delivery.ID,
+		delivery.WebhookID,
+		delivery.TenantID,
+		nullableString(delivery.InstanceID),
+		string(delivery.EventType),
+		delivery.WebhookURL,
+		string(delivery.Status),
+		delivery.Attempts,
+		delivery.ResponseStatus,
+		delivery.ResponseBody,
+		delivery.LastError,
+		delivery.PayloadJSON,
+		delivery.DeliveredAt,
+		delivery.LastAttemptAt,
+		delivery.CreatedAt,
+		delivery.UpdatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("webhookRepo.CreateDelivery: %w", err)
+	}
+	return nil
+}
+
+func (r *webhookRepo) UpdateDeliveryAttempt(ctx context.Context, id string, status domain.WebhookDeliveryStatus, responseStatus int, responseBody, lastError string, deliveredAt, attemptedAt *time.Time) error {
+	q := `
+		UPDATE webhook_deliveries
+		SET status = $2,
+			attempts = attempts + 1,
+			response_status = $3,
+			response_body = $4,
+			last_error = $5,
+			delivered_at = COALESCE($6, delivered_at),
+			last_attempt_at = $7,
+			updated_at = NOW()
+		WHERE id = $1
+	`
+	res, err := r.db.ExecContext(ctx, q, id, string(status), responseStatus, responseBody, lastError, deliveredAt, attemptedAt)
+	if err != nil {
+		return fmt.Errorf("webhookRepo.UpdateDeliveryAttempt: %w", err)
+	}
+	rows, err := res.RowsAffected()
+	if err == nil && rows == 0 {
+		return domain.ErrWebhookDeliveryNotFound
+	}
+	return err
+}
+
+func (r *webhookRepo) ListDeliveries(ctx context.Context, tenantID, instanceID, webhookID string, limit int) ([]domain.WebhookDelivery, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	q := `
+		SELECT id, webhook_id, tenant_id, instance_id, event_type, webhook_url, status,
+		       attempts, response_status, response_body, last_error, payload_json,
+		       delivered_at, last_attempt_at, created_at, updated_at
+		FROM webhook_deliveries
+		WHERE tenant_id = $1
+		  AND ($2 = '' OR COALESCE(instance_id, '') = $2)
+		  AND ($3 = '' OR webhook_id = $3)
+		ORDER BY created_at DESC
+		LIMIT $4
+	`
+	rows, err := r.db.QueryContext(ctx, q, tenantID, instanceID, webhookID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("webhookRepo.ListDeliveries: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]domain.WebhookDelivery, 0, limit)
+	for rows.Next() {
+		var item domain.WebhookDelivery
+		var instanceID sql.NullString
+		var eventType string
+		var status string
+		if err := rows.Scan(
+			&item.ID,
+			&item.WebhookID,
+			&item.TenantID,
+			&instanceID,
+			&eventType,
+			&item.WebhookURL,
+			&status,
+			&item.Attempts,
+			&item.ResponseStatus,
+			&item.ResponseBody,
+			&item.LastError,
+			&item.PayloadJSON,
+			&item.DeliveredAt,
+			&item.LastAttemptAt,
+			&item.CreatedAt,
+			&item.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("webhookRepo.ListDeliveries.scan: %w", err)
+		}
+		item.InstanceID = instanceID.String
+		item.EventType = domain.EventType(eventType)
+		item.Status = domain.WebhookDeliveryStatus(status)
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+func (r *webhookRepo) GetDeliveryByID(ctx context.Context, id string) (*domain.WebhookDelivery, error) {
+	q := `
+		SELECT id, webhook_id, tenant_id, instance_id, event_type, webhook_url, status,
+		       attempts, response_status, response_body, last_error, payload_json,
+		       delivered_at, last_attempt_at, created_at, updated_at
+		FROM webhook_deliveries
+		WHERE id = $1
+	`
+	var item domain.WebhookDelivery
+	var instanceID sql.NullString
+	var eventType string
+	var status string
+	err := r.db.QueryRowContext(ctx, q, id).Scan(
+		&item.ID,
+		&item.WebhookID,
+		&item.TenantID,
+		&instanceID,
+		&eventType,
+		&item.WebhookURL,
+		&status,
+		&item.Attempts,
+		&item.ResponseStatus,
+		&item.ResponseBody,
+		&item.LastError,
+		&item.PayloadJSON,
+		&item.DeliveredAt,
+		&item.LastAttemptAt,
+		&item.CreatedAt,
+		&item.UpdatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, domain.ErrWebhookDeliveryNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("webhookRepo.GetDeliveryByID: %w", err)
+	}
+	item.InstanceID = instanceID.String
+	item.EventType = domain.EventType(eventType)
+	item.Status = domain.WebhookDeliveryStatus(status)
+	return &item, nil
 }
 
 // ─── Subscription Repository ─────────────────────────────────────────────────

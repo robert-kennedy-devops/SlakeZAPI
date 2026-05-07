@@ -38,7 +38,9 @@ var (
 	ErrInvalidPhone       = errors.New("invalid phone number")
 
 	// Webhook
-	ErrWebhookNotFound = errors.New("webhook not found")
+	ErrWebhookNotFound         = errors.New("webhook not found")
+	ErrWebhookDeliveryNotFound = errors.New("webhook delivery not found")
+	ErrQueueJobNotFound        = errors.New("queue job not found")
 
 	// Session metadata
 	ErrSessionMetadataNotFound = errors.New("whatsapp session metadata not found")

@@ -2,16 +2,39 @@
   "info": {
     "name": "SlakeZAPI",
     "_postman_id": "1a091cb3-64d7-4bdb-aaf1-f637de3ce4b0",
-    "description": "Colecao principal para autenticar, operar instancias, mensagens, campanhas e observabilidade.",
+    "description": "Colecao principal para autenticar, operar instancias, mensagens, DLQ, auditoria e webhooks.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     { "key": "baseUrl", "value": "http://localhost:8080" },
     { "key": "accessToken", "value": "" },
     { "key": "tenantId", "value": "" },
-    { "key": "instanceId", "value": "" }
+    { "key": "instanceId", "value": "" },
+    { "key": "deliveryId", "value": "" },
+    { "key": "deadLetterJobId", "value": "" }
   ],
   "item": [
+    {
+      "name": "Docs Index",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/docs"
+      }
+    },
+    {
+      "name": "OpenAPI",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/docs/openapi.yaml"
+      }
+    },
+    {
+      "name": "Postman Collection",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/docs/postman_collection.json"
+      }
+    },
     {
       "name": "Bootstrap Tenant",
       "request": {
@@ -77,7 +100,7 @@
       }
     },
     {
-      "name": "Send Interactive Buttons",
+      "name": "Resolve Contacts",
       "request": {
         "method": "POST",
         "header": [
@@ -86,10 +109,10 @@
           { "key": "X-Instance-ID", "value": "{{instanceId}}" },
           { "key": "Content-Type", "value": "application/json" }
         ],
-        "url": "{{baseUrl}}/app/messages/send-interactive",
+        "url": "{{baseUrl}}/app/contacts/resolve",
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"phone\": \"5511999999999\",\n  \"type\": \"buttons\",\n  \"body\": \"Escolha uma opcao\",\n  \"footer\": \"Atendimento\",\n  \"buttons\": [\n    { \"id\": \"sales\", \"title\": \"Comercial\" },\n    { \"id\": \"support\", \"title\": \"Suporte\" }\n  ]\n}"
+          "raw": "{\n  \"phones\": [\"5511999999999\", \"5511000000000\"]\n}"
         }
       }
     },
@@ -105,10 +128,61 @@
       }
     },
     {
-      "name": "OpenAPI",
+      "name": "List Dead Letters",
       "request": {
         "method": "GET",
-        "url": "{{baseUrl}}/docs/openapi.yaml"
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+          { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+        ],
+        "url": "{{baseUrl}}/app/queue/dead-letters"
+      }
+    },
+    {
+      "name": "Requeue Dead Letter",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+          { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+        ],
+        "url": "{{baseUrl}}/app/queue/dead-letters/{{deadLetterJobId}}/requeue"
+      }
+    },
+    {
+      "name": "List Webhook Deliveries",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+          { "key": "X-Tenant-ID", "value": "{{tenantId}}" },
+          { "key": "X-Instance-ID", "value": "{{instanceId}}" }
+        ],
+        "url": "{{baseUrl}}/app/webhooks/deliveries"
+      }
+    },
+    {
+      "name": "Replay Webhook Delivery",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+          { "key": "X-Tenant-ID", "value": "{{tenantId}}" },
+          { "key": "X-Instance-ID", "value": "{{instanceId}}" }
+        ],
+        "url": "{{baseUrl}}/app/webhooks/deliveries/{{deliveryId}}/replay"
+      }
+    },
+    {
+      "name": "List Audit Logs",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+          { "key": "X-Tenant-ID", "value": "{{tenantId}}" },
+          { "key": "X-Instance-ID", "value": "{{instanceId}}" }
+        ],
+        "url": "{{baseUrl}}/app/audit"
       }
     }
   ]

@@ -155,6 +155,11 @@ export interface QueueSnapshot {
   dead_lettered: QueueJobView[];
 }
 
+export interface QueueRequeueResponse {
+  job_id: string;
+  status: string;
+}
+
 export interface Group {
   jid: string;
   name: string;
@@ -172,6 +177,37 @@ export interface Webhook {
   url: string;
   events: string[];
   active: boolean;
+  created_at: string;
+}
+
+export interface WebhookDelivery {
+  id: string;
+  webhook_id: string;
+  tenant_id: string;
+  instance_id?: string;
+  event_type: string;
+  webhook_url: string;
+  status: "queued" | "retrying" | "delivered" | "failed" | "replayed";
+  attempts: number;
+  response_status?: number;
+  response_body?: string;
+  last_error?: string;
+  payload_json?: string;
+  delivered_at?: string;
+  last_attempt_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AuditLog {
+  id: string;
+  tenant_id: string;
+  instance_id?: string;
+  user_id?: string;
+  request_id?: string;
+  action: string;
+  resource: string;
+  payload?: Record<string, unknown>;
   created_at: string;
 }
 

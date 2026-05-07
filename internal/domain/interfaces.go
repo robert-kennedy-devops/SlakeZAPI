@@ -78,7 +78,12 @@ type MessageRepository interface {
 type WebhookRepository interface {
 	Create(ctx context.Context, wh *Webhook) error
 	GetByTenant(ctx context.Context, tenantID, instanceID string) ([]Webhook, error)
+	GetByID(ctx context.Context, id string) (*Webhook, error)
 	Delete(ctx context.Context, id string) error
+	CreateDelivery(ctx context.Context, delivery *WebhookDelivery) error
+	UpdateDeliveryAttempt(ctx context.Context, id string, status WebhookDeliveryStatus, responseStatus int, responseBody, lastError string, deliveredAt, attemptedAt *time.Time) error
+	ListDeliveries(ctx context.Context, tenantID, instanceID, webhookID string, limit int) ([]WebhookDelivery, error)
+	GetDeliveryByID(ctx context.Context, id string) (*WebhookDelivery, error)
 }
 
 // SessionRepository handles persistence of WhatsApp session metadata.
@@ -139,9 +144,13 @@ type EventBus interface {
 	SubscribeAll() (<-chan Event, func())
 }
 
-// WebhookDelivery handles outbound webhook POST requests.
-type WebhookDelivery interface {
+// WebhookDeliveryExecutor handles outbound webhook POST requests.
+type WebhookDeliveryExecutor interface {
 	Deliver(ctx context.Context, webhook Webhook, event Event) error
+}
+
+type WebhookReplayService interface {
+	ReplayDelivery(ctx context.Context, wh Webhook, source *WebhookDelivery) (*WebhookDelivery, error)
 }
 
 // BillingService enforces plan limits and tracks usage.
@@ -154,4 +163,11 @@ type BillingService interface {
 
 type QueueService interface {
 	Snapshot() QueueSnapshot
+	DeadLetters(limit int) []QueueJobView
+	RequeueDeadLetter(id string) error
+}
+
+type AuditLogRepository interface {
+	Create(ctx context.Context, item *AuditLog) error
+	List(ctx context.Context, tenantID, instanceID, actionPrefix string, limit int) ([]AuditLog, error)
 }

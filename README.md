@@ -146,6 +146,7 @@ O painel web usa login de usuário em `/app/auth/*`, seleção de tenant por hea
 
 Arquivos servidos pela própria API:
 
+- Índice HTML: `GET /docs`
 - OpenAPI: `GET /docs/openapi.yaml`
 - Postman: `GET /docs/postman_collection.json`
 
@@ -159,6 +160,7 @@ Arquivos servidos pela própria API:
 | `GET` | `/livez` | Liveness probe |
 | `GET` | `/readyz` | Readiness probe com dependências |
 | `GET` | `/metrics` | Métricas Prometheus |
+| `GET` | `/docs` | Índice HTML da documentação embutida |
 | `GET` | `/docs/openapi.yaml` | Especificação OpenAPI servida pela API |
 | `GET` | `/docs/postman_collection.json` | Coleção Postman servida pela API |
 | `POST` | `/auth/bootstrap` | Criar tenant, assinatura inicial e primeira API key |
@@ -188,8 +190,13 @@ Arquivos servidos pela própria API:
 | `POST` | `/webhook` | Registrar URL de webhook |
 | `GET` | `/webhook` | Listar webhooks ativos |
 | `DELETE` | `/webhook/{id}` | Desativar webhook |
+| `GET` | `/webhook/deliveries` | Listar histórico recente de entregas |
+| `POST` | `/webhook/deliveries/{id}/replay` | Reenfileirar uma entrega de webhook |
 | `GET` | `/usage` | Consultar uso mensal atual |
 | `GET` | `/queue` | Snapshot da fila interna com jobs recentes |
+| `GET` | `/queue/dead-letters` | Listar jobs atualmente no DLQ |
+| `POST` | `/queue/dead-letters/{id}/requeue` | Recolocar um job do DLQ na fila |
+| `GET` | `/audit` | Listar trilha de auditoria persistida do tenant |
 | `GET` | `/ws` | WebSocket — eventos em tempo real |
 | `GET` | `/instances` | Listar instancias do tenant |
 | `POST` | `/instances` | Criar nova instancia WhatsApp |
@@ -214,6 +221,8 @@ Arquivos servidos pela própria API:
 | `GET` | `/app/groups` | Listar grupos no dashboard |
 | `GET` | `/app/webhooks` | Listar webhooks no dashboard |
 | `POST` | `/app/webhooks` | Criar webhook no dashboard |
+| `GET` | `/app/webhooks/deliveries` | Histórico de entregas no dashboard |
+| `POST` | `/app/webhooks/deliveries/{id}/replay` | Replay manual de entrega |
 | `GET` | `/app/apikeys` | Listar API keys no dashboard |
 | `POST` | `/app/apikeys` | Criar API key no dashboard |
 | `GET` | `/app/ws` | WebSocket do dashboard |
@@ -223,6 +232,9 @@ Arquivos servidos pela própria API:
 | `POST` | `/app/campaigns` | Criar campanha no dashboard |
 | `POST` | `/app/campaigns/{id}/run` | Rodar campanha manualmente |
 | `GET` | `/app/queue` | Fila observável no dashboard |
+| `GET` | `/app/queue/dead-letters` | DLQ operacional no dashboard |
+| `POST` | `/app/queue/dead-letters/{id}/requeue` | Requeue manual de um dead-letter |
+| `GET` | `/app/audit` | Auditoria persistida do dashboard |
 
 ### Autenticação
 
@@ -388,6 +400,13 @@ curl -X POST http://localhost:8080/webhook \
   }'
 ```
 
+### Replay de webhook
+
+```bash
+curl -X POST http://localhost:8080/webhook/deliveries/delivery_123/replay \
+  -H "Authorization: Bearer sua_api_key"
+```
+
 ### Baixar mídia inbound
 
 ```bash
@@ -474,7 +493,9 @@ Quando o limite é excedido, a API retorna `HTTP 402 Payment Required`.
 - `GET /readyz` valida readiness do banco e worker pool.
 - `GET /livez` responde liveness simples para orquestradores.
 - `GET /queue` e `GET /app/queue` expõem jobs recentes, retries e dead letters.
-- Logs de auditoria são emitidos para operações críticas como bootstrap, criação/revogação de API key, envio de mensagens, mudanças de sessão e webhooks.
+- `GET /queue/dead-letters` e `POST /queue/dead-letters/{id}/requeue` fecham o ciclo operacional do DLQ.
+- Entregas de webhook ficam persistidas em histórico com status, tentativas, erro da última tentativa e replay manual.
+- Logs de auditoria agora também ficam persistidos em `audit_logs`, com consulta por `/audit` e `/app/audit`.
 
 ---
 
@@ -586,6 +607,12 @@ Observabilidade:
 - métricas de autenticação do dashboard em `slakezapi_auth_events_total{action,outcome}`
 
 CI disponível em `.github/workflows/ci.yml` com validação de Go, build do frontend, Playwright e build das imagens Docker.
+
+Release automatizado disponível em `.github/workflows/release.yml`:
+
+- push em `main` publica imagens em `ghcr.io/<owner>/slakezapi-api`
+- tags `v*` também publicam imagem com `latest`
+- usa `GITHUB_TOKEN` nativo do GitHub Actions, sem segredo extra
 
 Com isso, a API continua apta para integrações via API key e o produto ganha uma camada SaaS pronta para operação humana.
 

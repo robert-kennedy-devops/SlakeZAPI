@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/whatsapp-saas/api/internal/audit"
 	"github.com/whatsapp-saas/api/internal/billing"
 	"github.com/whatsapp-saas/api/internal/domain"
 	"github.com/whatsapp-saas/api/internal/events"
@@ -20,6 +21,7 @@ import (
 	"github.com/whatsapp-saas/api/internal/testutil"
 	"github.com/whatsapp-saas/api/internal/transport/ws"
 	"github.com/whatsapp-saas/api/internal/usecase"
+	"github.com/whatsapp-saas/api/internal/webhook"
 	"github.com/whatsapp-saas/api/pkg/logger"
 )
 
@@ -406,6 +408,27 @@ func TestRouterAppMemberManagementFlow(t *testing.T) {
 	if updatedMember.Role != domain.UserRoleOperator {
 		t.Fatalf("expected operator role after update, got %+v", updatedMember)
 	}
+
+	var auditItems []domain.AuditLog
+	requestJSONWithHeaders(t, server, nil, http.MethodGet, "/app/audit", ownerResp.Token, nil, http.StatusOK, &auditItems, map[string]string{
+		"X-Tenant-ID": ownerResp.Tenant.ID,
+	})
+	if len(auditItems) == 0 {
+		t.Fatal("expected persisted audit entries")
+	}
+	foundAdd := false
+	foundRoleUpdate := false
+	for _, item := range auditItems {
+		if item.Action == "app.members.add" {
+			foundAdd = true
+		}
+		if item.Action == "app.members.role_update" {
+			foundRoleUpdate = true
+		}
+	}
+	if !foundAdd || !foundRoleUpdate {
+		t.Fatalf("expected member audit actions, got %+v", auditItems)
+	}
 }
 
 func TestRouterCORSPreflight(t *testing.T) {
@@ -426,6 +449,50 @@ func TestRouterCORSPreflight(t *testing.T) {
 	}
 	if got := rec.Header().Get("Access-Control-Allow-Credentials"); got != "true" {
 		t.Fatalf("unexpected allow credentials header: %q", got)
+	}
+}
+
+func TestRouterServesEmbeddedDocs(t *testing.T) {
+	db := testutil.OpenTestDB(t)
+	server := newIntegrationServer(t, db)
+
+	req := httptest.NewRequest(http.MethodGet, "/docs", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for /docs, got %d", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
+		t.Fatalf("unexpected docs content-type: %q", got)
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte("SlakeZAPI Developer Docs")) {
+		t.Fatalf("expected docs index html, got %q", rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/docs/openapi.yaml", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for openapi, got %d", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/yaml; charset=utf-8" {
+		t.Fatalf("unexpected openapi content-type: %q", got)
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte("/app/queue/dead-letters")) {
+		t.Fatalf("expected updated openapi content, got %q", rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/docs/postman_collection.json", nil)
+	rec = httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for postman, got %d", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/json; charset=utf-8" {
+		t.Fatalf("unexpected postman content-type: %q", got)
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte("Requeue Dead Letter")) {
+		t.Fatalf("expected updated postman content, got %q", rec.Body.String())
 	}
 }
 
@@ -451,9 +518,12 @@ func newIntegrationServer(t *testing.T, db *sql.DB) http.Handler {
 	instanceRepo := repository.NewInstanceRepository(db)
 	msgRepo := repository.NewMessageRepository(db)
 	webhookRepo := repository.NewWebhookRepository(db)
+	auditRepo := repository.NewAuditLogRepository(db)
 	subRepo := repository.NewSubscriptionRepository(db)
 	usageRepo := repository.NewUsageRepository(db)
 	campaignRepo := repository.NewCampaignRepository(db)
+	auditSvc := audit.NewService(auditRepo, log)
+	log = log.WithAuditSink(auditSvc)
 
 	waSvc := &fakeWhatsAppService{
 		status:       domain.SessionStatusConnected,
@@ -465,11 +535,13 @@ func newIntegrationServer(t *testing.T, db *sql.DB) http.Handler {
 	msgUC := usecase.NewMessageUsecase(msgRepo, instanceRepo, campaignRepo, waSvc, billingSvc, eventBus, log)
 	waUC := usecase.NewWhatsAppUsecase(waSvc, instanceRepo, eventBus, log)
 	instanceUC := usecase.NewInstanceUsecase(tenantRepo, instanceRepo, log)
-	webhookUC := usecase.NewWebhookUsecase(webhookRepo, instanceRepo, subRepo, log)
 	billingUC := usecase.NewBillingUsecase(billingSvc, log)
 	campaignUC := usecase.NewCampaignUsecase(campaignRepo, instanceRepo, msgUC, log)
 	opsUC := usecase.NewOperationsUsecase(pool)
+	auditUC := usecase.NewAuditUsecase(auditRepo)
 	hub := ws.NewHub(eventBus, log)
+	dispatcher := webhook.NewDispatcher(webhookRepo, eventBus, pool, time.Second, 1, log)
+	webhookUC := usecase.NewWebhookUsecase(webhookRepo, instanceRepo, subRepo, dispatcher, log)
 
 	return NewRouter(
 		db,
@@ -483,6 +555,7 @@ func newIntegrationServer(t *testing.T, db *sql.DB) http.Handler {
 		instanceUC,
 		campaignUC,
 		opsUC,
+		auditUC,
 		hub,
 		metrics,
 		time.Now().UTC(),

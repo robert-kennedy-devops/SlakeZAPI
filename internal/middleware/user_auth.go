@@ -47,6 +47,7 @@ func UserAuth(userAuthUC *usecase.UserAuthUsecase, log *logger.Logger) func(http
 				ctx = context.WithValue(ctx, tenantCtxKey{}, current.Tenant.ID)
 				if instanceID := requestedInstanceID(r); instanceID != "" {
 					ctx = context.WithValue(ctx, instanceCtxKey{}, instanceID)
+					ctx = logger.WithInstanceID(ctx, instanceID)
 				}
 				ctx = context.WithValue(ctx, userRoleCtxKey{}, current.Membership.Role)
 				ctx = logger.WithTenantID(ctx, current.Tenant.ID)

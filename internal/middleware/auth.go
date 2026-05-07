@@ -32,6 +32,7 @@ func Auth(authUC *usecase.AuthUsecase, log *logger.Logger) func(http.Handler) ht
 			ctx := context.WithValue(r.Context(), tenantCtxKey{}, key.TenantID)
 			if instanceID := requestedInstanceID(r); instanceID != "" {
 				ctx = context.WithValue(ctx, instanceCtxKey{}, instanceID)
+				ctx = logger.WithInstanceID(ctx, instanceID)
 			}
 			ctx = logger.WithTenantID(ctx, key.TenantID)
 

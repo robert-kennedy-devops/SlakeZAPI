@@ -76,11 +76,18 @@ const QUERY_KEYS = {
     instanceID,
   ],
   queue: (tenantID: string) => ["queue", tenantID],
+  queueDeadLetters: (tenantID: string) => ["queue-dead-letters", tenantID],
   groups: (tenantID: string, instanceID: string) => ["groups", tenantID, instanceID],
   webhooks: (tenantID: string, instanceID: string) => ["webhooks", tenantID, instanceID],
+  webhookDeliveries: (tenantID: string, instanceID: string) => [
+    "webhook-deliveries",
+    tenantID,
+    instanceID,
+  ],
   apiKeys: (tenantID: string) => ["apikeys", tenantID],
   usage: (tenantID: string) => ["usage", tenantID],
   members: (tenantID: string) => ["members", tenantID],
+  audit: (tenantID: string, instanceID: string) => ["audit", tenantID, instanceID],
 };
 
 const ROLE_LABELS: Record<UserRole, string> = {
@@ -234,6 +241,12 @@ export function DashboardClient() {
     queryFn: () => api.webhooks(token, tenantHeader, instanceHeader),
     enabled: Boolean(token && tenantHeader && instanceHeader),
   });
+  const webhookDeliveriesQuery = useQuery({
+    queryKey: QUERY_KEYS.webhookDeliveries(tenantHeader, instanceHeader),
+    queryFn: () => api.webhookDeliveries(token, tenantHeader, instanceHeader),
+    enabled: Boolean(token && tenantHeader && instanceHeader),
+    refetchInterval: 5000,
+  });
   const campaignsQuery = useQuery({
     queryKey: QUERY_KEYS.campaigns(tenantHeader, instanceHeader),
     queryFn: () => api.campaigns(token, tenantHeader, instanceHeader),
@@ -255,10 +268,22 @@ export function DashboardClient() {
     enabled: Boolean(token && tenantHeader),
     refetchInterval: 5000,
   });
+  const queueDeadLettersQuery = useQuery({
+    queryKey: QUERY_KEYS.queueDeadLetters(tenantHeader),
+    queryFn: () => api.queueDeadLetters(token, tenantHeader),
+    enabled: Boolean(token && tenantHeader),
+    refetchInterval: 5000,
+  });
   const membersQuery = useQuery({
     queryKey: QUERY_KEYS.members(tenantHeader),
     queryFn: () => api.members(token, tenantHeader),
     enabled: Boolean(token && tenantHeader),
+  });
+  const auditQuery = useQuery({
+    queryKey: QUERY_KEYS.audit(tenantHeader, instanceHeader),
+    queryFn: () => api.auditLogs(token, tenantHeader, instanceHeader),
+    enabled: Boolean(token && tenantHeader),
+    refetchInterval: 10000,
   });
 
   useEffect(() => {
@@ -486,6 +511,35 @@ export function DashboardClient() {
       notify("Webhook registrado.");
       queryClient.invalidateQueries({
         queryKey: QUERY_KEYS.webhooks(tenantHeader, instanceHeader),
+      });
+    },
+    onError: handleMutationError,
+  });
+
+  const replayWebhookDelivery = useMutation({
+    mutationFn: (deliveryID: string) =>
+      api.replayWebhookDelivery(token, tenantHeader, instanceHeader, deliveryID),
+    onSuccess: () => {
+      notify("Replay de webhook enfileirado.");
+      queryClient.invalidateQueries({
+        queryKey: QUERY_KEYS.webhookDeliveries(tenantHeader, instanceHeader),
+      });
+      queryClient.invalidateQueries({
+        queryKey: QUERY_KEYS.queue(tenantHeader),
+      });
+    },
+    onError: handleMutationError,
+  });
+
+  const requeueDeadLetter = useMutation({
+    mutationFn: (jobID: string) => api.requeueDeadLetter(token, tenantHeader, jobID),
+    onSuccess: () => {
+      notify("Job recolocado na fila.");
+      queryClient.invalidateQueries({
+        queryKey: QUERY_KEYS.queue(tenantHeader),
+      });
+      queryClient.invalidateQueries({
+        queryKey: QUERY_KEYS.queueDeadLetters(tenantHeader),
       });
     },
     onError: handleMutationError,
@@ -1608,6 +1662,40 @@ export function DashboardClient() {
                   <EmptyState label="Fila sem atividade recente." />
                 ) : null}
               </div>
+              <div className="mt-4 space-y-3">
+                <p className="text-sm font-semibold text-white">DLQ operacional</p>
+                {queueDeadLettersQuery.data?.length ? (
+                  queueDeadLettersQuery.data.slice(0, 8).map((job) => (
+                    <div
+                      key={`${job.id}-${job.updated_at}`}
+                      className="rounded-2xl border border-white/10 bg-slate-950/60 p-4"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-white">{job.kind}</p>
+                          <p className="mt-1 text-xs text-slate-400">
+                            tentativa {job.attempt} • {formatDate(job.updated_at)}
+                          </p>
+                        </div>
+                        <button
+                          className="button-secondary"
+                          disabled={requeueDeadLetter.isPending}
+                          onClick={() => requeueDeadLetter.mutate(job.id)}
+                          type="button"
+                        >
+                          Requeue
+                        </button>
+                      </div>
+                      <p className="mt-3 text-xs text-slate-500">{job.id}</p>
+                      {job.error ? (
+                        <p className="mt-2 text-xs text-danger">{job.error}</p>
+                      ) : null}
+                    </div>
+                  ))
+                ) : (
+                  <EmptyState label="Nenhum job em dead-letter." />
+                )}
+              </div>
             </FormPanel>
 
             <FormPanel
@@ -1781,6 +1869,54 @@ export function DashboardClient() {
                   <EmptyState label="Sem webhooks registrados." />
                 )}
               </div>
+              <div className="mt-4 space-y-3">
+                <p className="text-sm font-semibold text-white">
+                  Entregas recentes
+                </p>
+                {webhookDeliveriesQuery.data?.length ? (
+                  webhookDeliveriesQuery.data.slice(0, 8).map((delivery) => (
+                    <div
+                      key={delivery.id}
+                      className="rounded-2xl border border-white/10 bg-slate-950/60 p-4"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-white">
+                            {delivery.event_type}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-400">
+                            {delivery.status} • tentativa {delivery.attempts} •{" "}
+                            {formatDate(delivery.last_attempt_at || delivery.created_at)}
+                          </p>
+                        </div>
+                        <button
+                          className="button-secondary"
+                          disabled={replayWebhookDelivery.isPending}
+                          onClick={() => replayWebhookDelivery.mutate(delivery.id)}
+                          type="button"
+                        >
+                          Replay
+                        </button>
+                      </div>
+                      <p className="mt-3 text-xs text-slate-400">
+                        webhook: {delivery.webhook_url}
+                      </p>
+                      {delivery.response_status ? (
+                        <p className="mt-2 text-xs text-slate-500">
+                          status HTTP: {delivery.response_status}
+                        </p>
+                      ) : null}
+                      {delivery.last_error ? (
+                        <p className="mt-2 text-xs text-danger">
+                          {delivery.last_error}
+                        </p>
+                      ) : null}
+                    </div>
+                  ))
+                ) : (
+                  <EmptyState label="Sem histórico de entregas ainda." />
+                )}
+              </div>
             </FormPanel>
 
             <FormPanel
@@ -1903,6 +2039,56 @@ export function DashboardClient() {
             </FormPanel>
 
             <FormPanel
+              title="Auditoria"
+              icon={<ShieldCheck className="h-4 w-4" />}
+              action={
+                <button
+                  className="button-secondary"
+                  onClick={() =>
+                    queryClient.invalidateQueries({
+                      queryKey: QUERY_KEYS.audit(tenantHeader, instanceHeader),
+                    })
+                  }
+                  type="button"
+                >
+                  Atualizar auditoria
+                </button>
+              }
+            >
+              <div className="space-y-3">
+                {auditQuery.data?.length ? (
+                  auditQuery.data.slice(0, 10).map((item) => (
+                    <div
+                      key={item.id}
+                      className="rounded-2xl border border-white/10 bg-slate-950/60 p-4"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-white">
+                            {item.action}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-400">
+                            {item.resource} • {formatDate(item.created_at)}
+                          </p>
+                        </div>
+                        <span className="badge">
+                          {item.user_id ? item.user_id.slice(0, 8) : "system"}
+                        </span>
+                      </div>
+                      {item.request_id ? (
+                        <p className="mt-3 text-xs text-slate-500">
+                          request: {item.request_id}
+                        </p>
+                      ) : null}
+                    </div>
+                  ))
+                ) : (
+                  <EmptyState label="Sem eventos de auditoria ainda." />
+                )}
+              </div>
+            </FormPanel>
+
+            <FormPanel
               title="Equipe do Workspace"
               icon={<UsersRound className="h-4 w-4" />}
               action={
@@ -1992,14 +2178,21 @@ function invalidateTenant(
       queryKey: QUERY_KEYS.webhooks(tenantID, instanceID),
     });
     queryClient.invalidateQueries({
+      queryKey: QUERY_KEYS.webhookDeliveries(tenantID, instanceID),
+    });
+    queryClient.invalidateQueries({
       queryKey: QUERY_KEYS.campaigns(tenantID, instanceID),
     });
   }
   queryClient.invalidateQueries({ queryKey: QUERY_KEYS.instances(tenantID) });
   queryClient.invalidateQueries({ queryKey: QUERY_KEYS.apiKeys(tenantID) });
   queryClient.invalidateQueries({ queryKey: QUERY_KEYS.queue(tenantID) });
+  queryClient.invalidateQueries({ queryKey: QUERY_KEYS.queueDeadLetters(tenantID) });
   queryClient.invalidateQueries({ queryKey: QUERY_KEYS.usage(tenantID) });
   queryClient.invalidateQueries({ queryKey: QUERY_KEYS.members(tenantID) });
+  if (instanceID) {
+    queryClient.invalidateQueries({ queryKey: QUERY_KEYS.audit(tenantID, instanceID) });
+  }
 }
 
 function MetricCard({

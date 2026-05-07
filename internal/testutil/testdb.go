@@ -62,7 +62,7 @@ func cleanupDB(t *testing.T, db *sql.DB) {
 	defer cancel()
 
 	statements := []string{
-		`TRUNCATE TABLE user_sessions, tenant_users, users, webhooks, usage, subscriptions, api_keys, messages, whatsapp_sessions, tenants RESTART IDENTITY CASCADE`,
+		`TRUNCATE TABLE audit_logs, webhook_deliveries, user_sessions, tenant_users, users, webhooks, usage, subscriptions, api_keys, messages, whatsapp_sessions, tenants RESTART IDENTITY CASCADE`,
 		`DO $$
 		DECLARE
 			r RECORD;

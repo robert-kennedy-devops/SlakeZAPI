@@ -21,15 +21,21 @@ const (
 type contextKey string
 
 const (
-	keyRequestID contextKey = "request_id"
-	keyTenantID  contextKey = "tenant_id"
-	keyUserID    contextKey = "user_id"
+	keyRequestID  contextKey = "request_id"
+	keyTenantID   contextKey = "tenant_id"
+	keyUserID     contextKey = "user_id"
+	keyInstanceID contextKey = "instance_id"
 )
+
+type AuditSink interface {
+	Record(action string, fields map[string]interface{})
+}
 
 // Logger is a minimal structured JSON logger.
 type Logger struct {
 	out    io.Writer
 	fields map[string]interface{}
+	sink   AuditSink
 }
 
 func New() *Logger {
@@ -39,14 +45,15 @@ func New() *Logger {
 	}
 }
 
+func (l *Logger) WithAuditSink(sink AuditSink) *Logger {
+	return &Logger{out: l.out, fields: cloneFields(l.fields), sink: sink}
+}
+
 // WithField returns a new Logger with an extra field attached.
 func (l *Logger) WithField(key string, value interface{}) *Logger {
-	fields := make(map[string]interface{}, len(l.fields)+1)
-	for k, v := range l.fields {
-		fields[k] = v
-	}
+	fields := cloneFields(l.fields)
 	fields[key] = value
-	return &Logger{out: l.out, fields: fields}
+	return &Logger{out: l.out, fields: fields, sink: l.sink}
 }
 
 // WithContext reads request_id and tenant_id from context.
@@ -60,6 +67,9 @@ func (l *Logger) WithContext(ctx context.Context) *Logger {
 	}
 	if uid, ok := ctx.Value(keyUserID).(string); ok && uid != "" {
 		lg = lg.WithField("user_id", uid)
+	}
+	if iid, ok := ctx.Value(keyInstanceID).(string); ok && iid != "" {
+		lg = lg.WithField("instance_id", iid)
 	}
 	return lg
 }
@@ -99,6 +109,13 @@ func (l *Logger) Audit(action string, fields ...map[string]interface{}) {
 	extra := merge(fields...)
 	extra["event_type"] = "audit"
 	extra["action"] = action
+	if l.sink != nil {
+		payload := cloneFields(l.fields)
+		for k, v := range extra {
+			payload[k] = v
+		}
+		l.sink.Record(action, payload)
+	}
 	l.log(LevelInfo, "audit", extra)
 }
 
@@ -139,4 +156,21 @@ func TenantIDFromCtx(ctx context.Context) string {
 func UserIDFromCtx(ctx context.Context) string {
 	v, _ := ctx.Value(keyUserID).(string)
 	return v
+}
+
+func WithInstanceID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, keyInstanceID, id)
+}
+
+func InstanceIDFromCtx(ctx context.Context) string {
+	v, _ := ctx.Value(keyInstanceID).(string)
+	return v
+}
+
+func cloneFields(src map[string]interface{}) map[string]interface{} {
+	dst := make(map[string]interface{}, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
 }

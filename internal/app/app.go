@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/whatsapp-saas/api/internal/audit"
 	"github.com/whatsapp-saas/api/internal/billing"
 	"github.com/whatsapp-saas/api/internal/config"
 	"github.com/whatsapp-saas/api/internal/events"
@@ -53,9 +54,13 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 	msgRepo := repository.NewMessageRepository(db)
 	sessionRepo := repository.NewSessionRepository(db)
 	webhookRepo := repository.NewWebhookRepository(db)
+	auditRepo := repository.NewAuditLogRepository(db)
 	subRepo := repository.NewSubscriptionRepository(db)
 	usageRepo := repository.NewUsageRepository(db)
 	campaignRepo := repository.NewCampaignRepository(db)
+
+	auditSvc := audit.NewService(auditRepo, log)
+	log = log.WithAuditSink(auditSvc)
 
 	// ── Infrastructure ──────────────────────────────────────────────────────
 	eventBus := events.NewBus()
@@ -78,10 +83,10 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 	msgUC := usecase.NewMessageUsecase(msgRepo, instanceRepo, campaignRepo, waMgr, billingSvc, eventBus, log)
 	waUC := usecase.NewWhatsAppUsecase(waMgr, instanceRepo, eventBus, log)
 	instanceUC := usecase.NewInstanceUsecase(tenantRepo, instanceRepo, log)
-	webhookUC := usecase.NewWebhookUsecase(webhookRepo, instanceRepo, subRepo, log)
 	billingUC := usecase.NewBillingUsecase(billingSvc, log)
 	campaignUC := usecase.NewCampaignUsecase(campaignRepo, instanceRepo, msgUC, log)
 	opsUC := usecase.NewOperationsUsecase(workerPool)
+	auditUC := usecase.NewAuditUsecase(auditRepo)
 
 	// ── WebSocket Hub ────────────────────────────────────────────────────────
 	hub := ws.NewHub(eventBus, log)
@@ -92,13 +97,14 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 		cfg.WebhookTimeout, cfg.WebhookRetries, log,
 	)
 	_ = dispatcher // started in Run()
+	webhookUC := usecase.NewWebhookUsecase(webhookRepo, instanceRepo, subRepo, dispatcher, log)
 
 	// ── HTTP Router ──────────────────────────────────────────────────────────
 	router := transportHTTP.NewRouter(
 		db, workerPool,
 		authUC, userAuthUC, msgUC, waUC, webhookUC, billingUC,
 		instanceUC, campaignUC,
-		opsUC,
+		opsUC, auditUC,
 		hub, metrics, startedAt, cfg.RateLimitRPS, cfg.CORSAllowedOrigins,
 		cfg.UserSessionCookieName, cfg.UserSessionCookieSecure, cfg.UserSessionCookieDomain, cfg.UserSessionCookieSameSite, log,
 	)

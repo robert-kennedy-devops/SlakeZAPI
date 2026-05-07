@@ -326,3 +326,50 @@ func TestTenantUserRepositoryListsTenantMembersAndUpdatesRole(t *testing.T) {
 		t.Fatalf("expected operator role, got %s", updated.Role)
 	}
 }
+
+func TestAuditLogRepositoryStoresAndListsEntries(t *testing.T) {
+	db := testutil.OpenTestDB(t)
+	ctx := context.Background()
+
+	tenantRepo := NewTenantRepository(db)
+	auditRepo := NewAuditLogRepository(db)
+
+	now := time.Now().UTC()
+	tenant := &domain.Tenant{
+		ID:        uuid.NewString(),
+		Name:      "Tenant Audit",
+		Email:     "audit@example.com",
+		Active:    true,
+		CreatedAt: now,
+	}
+	if err := tenantRepo.Create(ctx, tenant); err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+
+	entry := &domain.AuditLog{
+		ID:        uuid.NewString(),
+		TenantID:  tenant.ID,
+		UserID:    "user-1",
+		RequestID: "req-1",
+		Action:    "webhook.replay",
+		Resource:  "webhook",
+		Payload: map[string]interface{}{
+			"delivery_id": "delivery-1",
+		},
+		CreatedAt: now,
+	}
+	if err := auditRepo.Create(ctx, entry); err != nil {
+		t.Fatalf("create audit log: %v", err)
+	}
+
+	items, err := auditRepo.List(ctx, tenant.ID, "", "webhook.", 10)
+	if err != nil {
+		t.Fatalf("list audit logs: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 audit log, got %d", len(items))
+	}
+	if items[0].Action != entry.Action || items[0].Payload["delivery_id"] != "delivery-1" {
+		t.Fatalf("unexpected audit entry loaded: %+v", items[0])
+	}
+}

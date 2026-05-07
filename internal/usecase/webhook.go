@@ -15,6 +15,7 @@ type WebhookUsecase struct {
 	webhookRepo  domain.WebhookRepository
 	instanceRepo domain.InstanceRepository
 	subRepo      domain.SubscriptionRepository
+	deliverySvc  domain.WebhookReplayService
 	log          *logger.Logger
 }
 
@@ -22,12 +23,14 @@ func NewWebhookUsecase(
 	webhookRepo domain.WebhookRepository,
 	instanceRepo domain.InstanceRepository,
 	subRepo domain.SubscriptionRepository,
+	deliverySvc domain.WebhookReplayService,
 	log *logger.Logger,
 ) *WebhookUsecase {
 	return &WebhookUsecase{
 		webhookRepo:  webhookRepo,
 		instanceRepo: instanceRepo,
 		subRepo:      subRepo,
+		deliverySvc:  deliverySvc,
 		log:          log,
 	}
 }
@@ -96,6 +99,46 @@ func (u *WebhookUsecase) Delete(ctx context.Context, tenantID, requestedInstance
 		}
 	}
 	return domain.ErrWebhookNotFound
+}
+
+func (u *WebhookUsecase) ListDeliveries(ctx context.Context, tenantID, requestedInstanceID, webhookID string, limit int) ([]domain.WebhookDelivery, error) {
+	instanceID, err := u.resolveInstanceID(ctx, tenantID, requestedInstanceID)
+	if err != nil {
+		return nil, err
+	}
+	return u.webhookRepo.ListDeliveries(ctx, tenantID, instanceID, webhookID, limit)
+}
+
+func (u *WebhookUsecase) ReplayDelivery(ctx context.Context, tenantID, requestedInstanceID, deliveryID string) (*domain.ReplayWebhookDeliveryResponse, error) {
+	if u.deliverySvc == nil {
+		return nil, domain.ErrBadRequest
+	}
+	instanceID, err := u.resolveInstanceID(ctx, tenantID, requestedInstanceID)
+	if err != nil {
+		return nil, err
+	}
+	delivery, err := u.webhookRepo.GetDeliveryByID(ctx, deliveryID)
+	if err != nil {
+		return nil, err
+	}
+	if delivery.TenantID != tenantID || delivery.InstanceID != instanceID {
+		return nil, domain.ErrWebhookDeliveryNotFound
+	}
+	wh, err := u.webhookRepo.GetByID(ctx, delivery.WebhookID)
+	if err != nil {
+		return nil, err
+	}
+	if wh.TenantID != tenantID {
+		return nil, domain.ErrWebhookNotFound
+	}
+	replay, err := u.deliverySvc.ReplayDelivery(ctx, *wh, delivery)
+	if err != nil {
+		return nil, err
+	}
+	return &domain.ReplayWebhookDeliveryResponse{
+		DeliveryID: replay.ID,
+		Status:     replay.Status,
+	}, nil
 }
 
 func (u *WebhookUsecase) resolveInstanceID(ctx context.Context, tenantID, requestedInstanceID string) (string, error) {

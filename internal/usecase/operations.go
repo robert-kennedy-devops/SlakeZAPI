@@ -13,3 +13,11 @@ func NewOperationsUsecase(queue domain.QueueService) *OperationsUsecase {
 func (u *OperationsUsecase) QueueSnapshot() domain.QueueSnapshot {
 	return u.queue.Snapshot()
 }
+
+func (u *OperationsUsecase) DeadLetters(limit int) []domain.QueueJobView {
+	return u.queue.DeadLetters(limit)
+}
+
+func (u *OperationsUsecase) RequeueDeadLetter(id string) error {
+	return u.queue.RequeueDeadLetter(id)
+}

@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: SlakeZAPI
-  version: 1.0.0
-  description: API de multi-instancia WhatsApp com dashboard, campanhas, webhooks e observabilidade.
+  version: 1.1.0
+  description: Plataforma WhatsApp multi-instância com dashboard, campanhas, webhooks, fila operacional e auditoria.
 servers:
   - url: http://localhost:8080
 security:
@@ -12,198 +12,356 @@ components:
     bearerAuth:
       type: http
       scheme: bearer
-      bearerFormat: APIKey or App Access Token
+      bearerFormat: API Key ou App Access Token
+  parameters:
+    TenantHeader:
+      in: header
+      name: X-Tenant-ID
+      required: true
+      schema:
+        type: string
+    InstanceHeader:
+      in: header
+      name: X-Instance-ID
+      required: false
+      schema:
+        type: string
+    DeliveryID:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: string
+    PhoneParam:
+      in: path
+      name: phone
+      required: true
+      schema:
+        type: string
+    JobID:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: string
+  responses:
+    Unauthorized:
+      description: Token ausente ou inválido
+    NotFound:
+      description: Recurso não encontrado
 paths:
-  /auth/bootstrap:
-    post:
-      summary: Cria tenant inicial e primeira API key
+  /docs:
+    get:
       security: []
-      requestBody:
-        required: true
-      responses:
-        "201":
-          description: Tenant criado
-  /app/auth/signup:
-    post:
-      summary: Cria usuario e workspace inicial
-      security: []
-      responses:
-        "201":
-          description: Sessao criada
-  /app/instances:
-    get:
-      summary: Lista instancias do tenant
-      parameters:
-        - in: header
-          name: X-Tenant-ID
-          required: true
-          schema:
-            type: string
+      summary: Índice HTML da documentação embutida
       responses:
         "200":
-          description: Lista de instancias
-    post:
-      summary: Cria uma instancia
-      parameters:
-        - in: header
-          name: X-Tenant-ID
-          required: true
-          schema:
-            type: string
-      responses:
-        "201":
-          description: Instancia criada
-  /app/whatsapp/connect:
-    post:
-      summary: Inicia pareamento e retorna QR
-      parameters:
-        - in: header
-          name: X-Tenant-ID
-          required: true
-          schema:
-            type: string
-        - in: header
-          name: X-Instance-ID
-          required: false
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Estado da sessao
-  /app/messages/send:
-    post:
-      summary: Envia mensagem de texto
-      parameters:
-        - in: header
-          name: X-Tenant-ID
-          required: true
-          schema:
-            type: string
-        - in: header
-          name: X-Instance-ID
-          required: false
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Mensagem enviada
-  /app/messages/send-media:
-    post:
-      summary: Envia midia por URL
-      parameters:
-        - in: header
-          name: X-Tenant-ID
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Midia enviada
-  /app/messages/send-interactive:
-    post:
-      summary: Envia botoes, lista ou enquete
-      responses:
-        "200":
-          description: Interacao enviada
-  /app/messages/send-group:
-    post:
-      summary: Envia mensagem para grupo
-      responses:
-        "200":
-          description: Mensagem enviada
-  /app/status/post:
-    post:
-      summary: Publica texto ou midia no status
-      responses:
-        "200":
-          description: Status publicado
-  /app/contacts/resolve:
-    post:
-      summary: Resolve contatos no WhatsApp
-      responses:
-        "200":
-          description: Contatos resolvidos
-  /app/messages:
-    get:
-      summary: Lista mensagens
-      responses:
-        "200":
-          description: Feed de mensagens
-  /app/conversations:
-    get:
-      summary: Lista conversas operacionais
-      responses:
-        "200":
-          description: Lista de conversas
-  /app/conversations/{phone}:
-    post:
-      summary: Atualiza estado e nota de uma conversa
-      parameters:
-        - in: path
-          name: phone
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Conversa atualizada
-  /app/groups:
-    get:
-      summary: Lista grupos da instancia conectada
-      responses:
-        "200":
-          description: Lista de grupos
-  /app/campaigns:
-    get:
-      summary: Lista campanhas
-      responses:
-        "200":
-          description: Lista de campanhas
-    post:
-      summary: Cria campanha
-      responses:
-        "201":
-          description: Campanha criada
-  /app/campaigns/{id}/run:
-    post:
-      summary: Executa campanha manualmente
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Campanha iniciada
-  /app/webhooks:
-    get:
-      summary: Lista webhooks
-      responses:
-        "200":
-          description: Lista de webhooks
-    post:
-      summary: Registra webhook
-      responses:
-        "201":
-          description: Webhook criado
-  /app/queue:
-    get:
-      summary: Snapshot da fila interna
-      responses:
-        "200":
-          description: Estado da fila
+          description: Página HTML com links rápidos
   /docs/openapi.yaml:
     get:
-      summary: OpenAPI desta API
       security: []
+      summary: Especificação OpenAPI em YAML
       responses:
         "200":
           description: Documento YAML
   /docs/postman_collection.json:
     get:
-      summary: Colecao Postman
       security: []
+      summary: Coleção Postman oficial
       responses:
         "200":
           description: Documento JSON
+  /auth/bootstrap:
+    post:
+      security: []
+      summary: Cria tenant inicial e primeira API key
+      responses:
+        "201":
+          description: Tenant criado
+  /auth/me:
+    get:
+      summary: Resumo do tenant autenticado por API key
+      responses:
+        "200":
+          description: Tenant e uso atual
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /queue:
+    get:
+      summary: Snapshot da fila interna
+      responses:
+        "200":
+          description: Estado atual da fila
+  /queue/dead-letters:
+    get:
+      summary: Lista jobs em dead-letter
+      responses:
+        "200":
+          description: Jobs disponíveis para requeue manual
+  /queue/dead-letters/{id}/requeue:
+    post:
+      summary: Recoloca um job do DLQ na fila
+      parameters:
+        - $ref: "#/components/parameters/JobID"
+      responses:
+        "202":
+          description: Job reenfileirado
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /audit:
+    get:
+      summary: Lista auditoria persistida do tenant
+      parameters:
+        - in: query
+          name: action_prefix
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Trilhas de auditoria
+  /webhook/deliveries:
+    get:
+      summary: Lista histórico recente de entregas de webhook
+      parameters:
+        - in: query
+          name: webhook_id
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Entregas recentes
+  /webhook/deliveries/{id}/replay:
+    post:
+      summary: Reenfileira uma entrega de webhook
+      parameters:
+        - $ref: "#/components/parameters/DeliveryID"
+      responses:
+        "202":
+          description: Replay aceito
+  /app/auth/signup:
+    post:
+      security: []
+      summary: Cria usuário owner, workspace e sessão web
+      responses:
+        "201":
+          description: Sessão criada
+  /app/auth/login:
+    post:
+      security: []
+      summary: Autentica usuário do dashboard
+      responses:
+        "200":
+          description: Sessão criada
+  /app/auth/refresh:
+    post:
+      security: []
+      summary: Renova access token com refresh cookie
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+      responses:
+        "200":
+          description: Sessão renovada
+  /app/auth/me:
+    get:
+      summary: Usuário atual e memberships
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+      responses:
+        "200":
+          description: Usuário autenticado
+  /app/instances:
+    get:
+      summary: Lista instâncias do tenant
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+      responses:
+        "200":
+          description: Instâncias do tenant
+    post:
+      summary: Cria uma instância
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+      responses:
+        "201":
+          description: Instância criada
+  /app/whatsapp/connect:
+    post:
+      summary: Inicia pareamento e retorna QR
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/InstanceHeader"
+      responses:
+        "200":
+          description: Estado da sessão
+  /app/whatsapp/status:
+    get:
+      summary: Estado atual da sessão WhatsApp
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/InstanceHeader"
+      responses:
+        "200":
+          description: Sessão atual
+  /app/messages/send:
+    post:
+      summary: Envia mensagem de texto
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/InstanceHeader"
+      responses:
+        "200":
+          description: Mensagem enviada
+  /app/messages/send-bulk:
+    post:
+      summary: Envia mensagem em massa
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/InstanceHeader"
+      responses:
+        "200":
+          description: Resultado consolidado do disparo
+  /app/messages/send-media:
+    post:
+      summary: Envia mídia por URL
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/InstanceHeader"
+      responses:
+        "200":
+          description: Mídia enviada
+  /app/messages/send-interactive:
+    post:
+      summary: Envia botões, lista ou enquete
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/InstanceHeader"
+      responses:
+        "200":
+          description: Interação enviada
+  /app/contacts/resolve:
+    post:
+      summary: Resolve contatos válidos no WhatsApp
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/InstanceHeader"
+      responses:
+        "200":
+          description: Resultado de lookup
+  /app/conversations:
+    get:
+      summary: Lista inbox operacional
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/InstanceHeader"
+      responses:
+        "200":
+          description: Conversas
+  /app/conversations/{phone}:
+    post:
+      summary: Atualiza estado e nota da conversa
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/InstanceHeader"
+        - $ref: "#/components/parameters/PhoneParam"
+      responses:
+        "200":
+          description: Conversa atualizada
+  /app/campaigns:
+    get:
+      summary: Lista campanhas da instância
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/InstanceHeader"
+      responses:
+        "200":
+          description: Campanhas
+    post:
+      summary: Cria campanha
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/InstanceHeader"
+      responses:
+        "201":
+          description: Campanha criada
+  /app/webhooks:
+    get:
+      summary: Lista webhooks
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/InstanceHeader"
+      responses:
+        "200":
+          description: Webhooks
+    post:
+      summary: Registra webhook
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/InstanceHeader"
+      responses:
+        "201":
+          description: Webhook criado
+  /app/webhooks/deliveries:
+    get:
+      summary: Histórico de entregas de webhook no dashboard
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/InstanceHeader"
+      responses:
+        "200":
+          description: Entregas recentes
+  /app/webhooks/deliveries/{id}/replay:
+    post:
+      summary: Replay manual de entrega de webhook
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/InstanceHeader"
+        - $ref: "#/components/parameters/DeliveryID"
+      responses:
+        "202":
+          description: Replay aceito
+  /app/queue:
+    get:
+      summary: Snapshot da fila no dashboard
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+      responses:
+        "200":
+          description: Estado atual da fila
+  /app/queue/dead-letters:
+    get:
+      summary: Lista dead letters no dashboard
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+      responses:
+        "200":
+          description: Jobs disponíveis para requeue
+  /app/queue/dead-letters/{id}/requeue:
+    post:
+      summary: Requeue manual de um dead-letter pelo dashboard
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/JobID"
+      responses:
+        "202":
+          description: Job reenfileirado
+  /app/audit:
+    get:
+      summary: Auditoria persistida do dashboard
+      parameters:
+        - $ref: "#/components/parameters/TenantHeader"
+        - $ref: "#/components/parameters/InstanceHeader"
+      responses:
+        "200":
+          description: Eventos de auditoria

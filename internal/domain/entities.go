@@ -227,6 +227,11 @@ type QueueSnapshot struct {
 	DeadLettered []QueueJobView `json:"dead_lettered"`
 }
 
+type QueueRequeueResponse struct {
+	JobID  string `json:"job_id"`
+	Status string `json:"status"`
+}
+
 type Group struct {
 	JID              string    `json:"jid"`
 	Name             string    `json:"name"`
@@ -248,6 +253,47 @@ type Webhook struct {
 	Secret     string    `json:"-"`
 	Active     bool      `json:"active"`
 	CreatedAt  time.Time `json:"created_at"`
+}
+
+type WebhookDeliveryStatus string
+
+const (
+	WebhookDeliveryQueued    WebhookDeliveryStatus = "queued"
+	WebhookDeliveryRetrying  WebhookDeliveryStatus = "retrying"
+	WebhookDeliveryDelivered WebhookDeliveryStatus = "delivered"
+	WebhookDeliveryFailed    WebhookDeliveryStatus = "failed"
+	WebhookDeliveryReplayed  WebhookDeliveryStatus = "replayed"
+)
+
+type WebhookDelivery struct {
+	ID             string                `json:"id"`
+	WebhookID      string                `json:"webhook_id"`
+	TenantID       string                `json:"tenant_id"`
+	InstanceID     string                `json:"instance_id,omitempty"`
+	EventType      EventType             `json:"event_type"`
+	WebhookURL     string                `json:"webhook_url"`
+	Status         WebhookDeliveryStatus `json:"status"`
+	Attempts       int                   `json:"attempts"`
+	ResponseStatus int                   `json:"response_status,omitempty"`
+	ResponseBody   string                `json:"response_body,omitempty"`
+	LastError      string                `json:"last_error,omitempty"`
+	PayloadJSON    []byte                `json:"payload_json,omitempty"`
+	DeliveredAt    *time.Time            `json:"delivered_at,omitempty"`
+	LastAttemptAt  *time.Time            `json:"last_attempt_at,omitempty"`
+	CreatedAt      time.Time             `json:"created_at"`
+	UpdatedAt      time.Time             `json:"updated_at"`
+}
+
+type AuditLog struct {
+	ID         string                 `json:"id"`
+	TenantID   string                 `json:"tenant_id"`
+	InstanceID string                 `json:"instance_id,omitempty"`
+	UserID     string                 `json:"user_id,omitempty"`
+	RequestID  string                 `json:"request_id,omitempty"`
+	Action     string                 `json:"action"`
+	Resource   string                 `json:"resource"`
+	Payload    map[string]interface{} `json:"payload,omitempty"`
+	CreatedAt  time.Time              `json:"created_at"`
 }
 
 // ─── WhatsApp Session ────────────────────────────────────────────────────────
@@ -469,6 +515,11 @@ type RegisterWebhookRequest struct {
 	InstanceID string   `json:"instance_id,omitempty"`
 	URL        string   `json:"url"`
 	Events     []string `json:"events"`
+}
+
+type ReplayWebhookDeliveryResponse struct {
+	DeliveryID string                `json:"delivery_id"`
+	Status     WebhookDeliveryStatus `json:"status"`
 }
 
 type SignUpRequest struct {

@@ -47,6 +47,8 @@ func DomainError(w http.ResponseWriter, err error) {
 	case errors.Is(err, domain.ErrTenantNotFound),
 		errors.Is(err, domain.ErrMessageNotFound),
 		errors.Is(err, domain.ErrWebhookNotFound),
+		errors.Is(err, domain.ErrWebhookDeliveryNotFound),
+		errors.Is(err, domain.ErrQueueJobNotFound),
 		errors.Is(err, domain.ErrSessionNotFound),
 		errors.Is(err, domain.ErrSessionMetadataNotFound),
 		errors.Is(err, domain.ErrUserNotFound),

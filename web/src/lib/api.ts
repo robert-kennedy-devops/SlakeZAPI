@@ -1,5 +1,6 @@
 import type {
   APIKey,
+  AuditLog,
   AppEvent,
   CreateAPIKeyResponse,
   Conversation,
@@ -9,6 +10,8 @@ import type {
   Instance,
   Message,
   BulkSendMessageResponse,
+  QueueJobView,
+  QueueRequeueResponse,
   QueueSnapshot,
   ResolvedContact,
   SendMessageResponse,
@@ -18,6 +21,7 @@ import type {
   Usage,
   UserSessionResponse,
   Webhook,
+  WebhookDelivery,
 } from "@/lib/types";
 import {
   clearAuthToken,
@@ -328,6 +332,16 @@ export const api = {
     }),
   webhooks: (token: string, tenantID: string, instanceID?: string) =>
     request<Webhook[]>("/app/webhooks", { token, tenantID, instanceID }),
+  webhookDeliveries: (
+    token: string,
+    tenantID: string,
+    instanceID: string | undefined,
+    webhookID?: string,
+  ) =>
+    request<WebhookDelivery[]>(
+      `/app/webhooks/deliveries${webhookID ? `?webhook_id=${encodeURIComponent(webhookID)}` : ""}`,
+      { token, tenantID, instanceID },
+    ),
   createWebhook: (
     token: string,
     tenantID: string,
@@ -343,12 +357,34 @@ export const api = {
     }),
   deleteWebhook: (token: string, tenantID: string, instanceID: string | undefined, id: string) =>
     request<void>(`/app/webhooks/${id}`, { method: "DELETE", token, tenantID, instanceID }),
+  replayWebhookDelivery: (
+    token: string,
+    tenantID: string,
+    instanceID: string | undefined,
+    id: string,
+  ) =>
+    request<{ delivery_id: string; status: string }>(`/app/webhooks/deliveries/${id}/replay`, {
+      method: "POST",
+      token,
+      tenantID,
+      instanceID,
+    }),
   usage: (token: string, tenantID: string) =>
     request<Usage>("/app/usage", { token, tenantID }),
   queue: (token: string, tenantID: string) =>
     request<QueueSnapshot>("/app/queue", { token, tenantID }),
+  queueDeadLetters: (token: string, tenantID: string) =>
+    request<QueueJobView[]>("/app/queue/dead-letters", { token, tenantID }),
+  requeueDeadLetter: (token: string, tenantID: string, id: string) =>
+    request<QueueRequeueResponse>(`/app/queue/dead-letters/${encodeURIComponent(id)}/requeue`, {
+      method: "POST",
+      token,
+      tenantID,
+    }),
   members: (token: string, tenantID: string) =>
     request<TenantMember[]>("/app/members", { token, tenantID }),
+  auditLogs: (token: string, tenantID: string, instanceID?: string) =>
+    request<AuditLog[]>("/app/audit", { token, tenantID, instanceID }),
   addMember: (
     token: string,
     tenantID: string,
