@@ -8,6 +8,8 @@
 
 # Go build cache
 /vendor/
+/web/node_modules/
+/web/.next/
 
 # Environment
 .env

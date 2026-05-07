@@ -1,4 +1,4 @@
-.PHONY: run build docker-up docker-down migrate lint tidy
+.PHONY: run build docker-up docker-down migrate lint tidy web-dev web-build
 
 # ── Local dev ──────────────────────────────────────────────
 run:
@@ -9,6 +9,12 @@ build:
 
 tidy:
 	go mod tidy
+
+web-dev:
+	cd web && npm run dev
+
+web-build:
+	cd web && npm run build
 
 lint:
 	go vet ./...
@@ -25,7 +31,7 @@ docker-db:
 
 # ── Database ────────────────────────────────────────────────
 migrate:
-	psql $${DATABASE_URL} -f migrations/001_initial.sql
+	for file in $$(ls migrations/*.sql | sort); do psql $${DATABASE_URL} -f $$file; done
 
 # ── Seed (create a test tenant + starter subscription) ──────
 seed:
@@ -41,6 +47,8 @@ help:
 	@echo ""
 	@echo "  make run          Rodar API localmente"
 	@echo "  make build        Compilar binário"
+	@echo "  make web-dev      Rodar frontend Next.js"
+	@echo "  make web-build    Buildar frontend Next.js"
 	@echo "  make docker-up    Subir API + Postgres via Docker"
 	@echo "  make docker-db    Subir apenas o Postgres"
 	@echo "  make migrate      Rodar migrations SQL"

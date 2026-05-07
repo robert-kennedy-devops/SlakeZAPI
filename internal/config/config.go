@@ -4,34 +4,38 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
 type Config struct {
 	// Server
-	HTTPPort         string
-	ShutdownTimeout  time.Duration
+	HTTPPort        string
+	ShutdownTimeout time.Duration
 
 	// Database
 	DatabaseURL      string
 	DBMaxConnections int
 
 	// Auth
-	APIKeySalt       string
+	APIKeySalt string
 
 	// WhatsApp
 	WhatsAppDataPath string
 
 	// Queue
-	WorkerCount      int
-	QueueBufferSize  int
+	WorkerCount     int
+	QueueBufferSize int
 
 	// Webhook
-	WebhookTimeout   time.Duration
-	WebhookRetries   int
+	WebhookTimeout time.Duration
+	WebhookRetries int
 
 	// Rate Limiting
-	RateLimitRPS     int    // requests per second per tenant
+	RateLimitRPS int // requests per second per tenant
+
+	// CORS
+	CORSAllowedOrigins []string
 }
 
 func Load() (*Config, error) {
@@ -47,6 +51,9 @@ func Load() (*Config, error) {
 		WebhookTimeout:   getDurationEnv("WEBHOOK_TIMEOUT", 10*time.Second),
 		WebhookRetries:   getIntEnv("WEBHOOK_RETRIES", 3),
 		RateLimitRPS:     getIntEnv("RATE_LIMIT_RPS", 10),
+		CORSAllowedOrigins: getListEnv("CORS_ALLOWED_ORIGINS", []string{
+			"http://localhost:3000",
+		}),
 	}
 
 	if cfg.DatabaseURL == "" {
@@ -88,4 +95,23 @@ func getDurationEnv(key string, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	return d
+}
+
+func getListEnv(key string, fallback []string) []string {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return fallback
+	}
+	parts := strings.Split(v, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	if len(out) == 0 {
+		return fallback
+	}
+	return out
 }

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -35,13 +36,14 @@ func OpenTestDB(t *testing.T) *sql.DB {
 		t.Fatalf("ping test db: %v", err)
 	}
 
-	migrationPath := migrationFilePath(t)
-	sqlBytes, err := os.ReadFile(migrationPath)
-	if err != nil {
-		t.Fatalf("read migration file: %v", err)
-	}
-	if _, err := db.ExecContext(ctx, string(sqlBytes)); err != nil {
-		t.Fatalf("apply schema: %v", err)
+	for _, migrationPath := range migrationFilePaths(t) {
+		sqlBytes, err := os.ReadFile(migrationPath)
+		if err != nil {
+			t.Fatalf("read migration file %s: %v", migrationPath, err)
+		}
+		if _, err := db.ExecContext(ctx, string(sqlBytes)); err != nil {
+			t.Fatalf("apply schema %s: %v", migrationPath, err)
+		}
 	}
 
 	cleanupDB(t, db)
@@ -60,7 +62,7 @@ func cleanupDB(t *testing.T, db *sql.DB) {
 	defer cancel()
 
 	statements := []string{
-		`TRUNCATE TABLE webhooks, usage, subscriptions, api_keys, messages, whatsapp_sessions, tenants RESTART IDENTITY CASCADE`,
+		`TRUNCATE TABLE user_sessions, tenant_users, users, webhooks, usage, subscriptions, api_keys, messages, whatsapp_sessions, tenants RESTART IDENTITY CASCADE`,
 		`DO $$
 		DECLARE
 			r RECORD;
@@ -82,7 +84,7 @@ func cleanupDB(t *testing.T, db *sql.DB) {
 	}
 }
 
-func migrationFilePath(t *testing.T) string {
+func migrationFilePaths(t *testing.T) []string {
 	t.Helper()
 
 	_, filename, _, ok := runtime.Caller(0)
@@ -90,8 +92,18 @@ func migrationFilePath(t *testing.T) string {
 		t.Fatal("unable to resolve test helper path")
 	}
 	base := filepath.Dir(filename)
-	path := filepath.Join(base, "..", "..", "migrations", "001_initial.sql")
-	return filepath.Clean(path)
+	matches, err := filepath.Glob(filepath.Join(base, "..", "..", "migrations", "*.sql"))
+	if err != nil {
+		t.Fatalf("list migration files: %v", err)
+	}
+	if len(matches) == 0 {
+		t.Fatal("no migration files found")
+	}
+	sort.Strings(matches)
+	for i := range matches {
+		matches[i] = filepath.Clean(matches[i])
+	}
+	return matches
 }
 
 func MustHeaderContains(t *testing.T, value, want string) {

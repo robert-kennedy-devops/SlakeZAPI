@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/skip2/go-qrcode"
 	"github.com/whatsapp-saas/api/internal/domain"
@@ -61,8 +62,8 @@ func (h *WhatsAppHandler) Status(w http.ResponseWriter, r *http.Request) {
 				QRPageURL string `json:"qr_page_url,omitempty"`
 			}{
 				Session:   session,
-				QRPNGURL:  absoluteURL(r, "/whatsapp/qr.png"),
-				QRPageURL: absoluteURL(r, "/whatsapp/qr"),
+				QRPNGURL:  absoluteURL(r, whatsappPath(r, "/qr.png")),
+				QRPageURL: absoluteURL(r, whatsappPath(r, "/qr")),
 			}
 			httputil.JSON(w, http.StatusOK, resp)
 			return
@@ -83,7 +84,7 @@ func (h *WhatsAppHandler) QRPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pngURL := absoluteURL(r, "/whatsapp/qr.png")
+	pngURL := absoluteURL(r, whatsappPath(r, "/qr.png"))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprintf(w, "<!doctype html><html><head><meta charset=\"utf-8\"><title>WhatsApp QR</title><style>body{font-family:sans-serif;padding:24px;max-width:720px;margin:auto}img{width:320px;height:320px;border:1px solid #ddd;padding:12px;background:#fff}code,pre{white-space:pre-wrap;word-break:break-all}</style></head><body><h1>WhatsApp QR</h1><p>Status: <strong>%s</strong></p><p>Escaneie este QR no WhatsApp em Dispositivos conectados.</p><p><img src=\"%s\" alt=\"WhatsApp QR\"></p><p>Se falhar, consulte <code>/whatsapp/status</code> para ver <code>last_error</code> e gere um novo QR com <code>POST /whatsapp/connect</code>.</p><h2>QR bruto</h2><pre>%s</pre></body></html>", session.Status, pngURL, session.QRCode)
 }
@@ -142,8 +143,8 @@ func attachQRLinks(r *http.Request, resp *domain.ConnectResponse) {
 	if resp == nil || resp.QRCode == "" {
 		return
 	}
-	resp.QRPNGURL = absoluteURL(r, "/whatsapp/qr.png")
-	resp.QRPageURL = absoluteURL(r, "/whatsapp/qr")
+	resp.QRPNGURL = absoluteURL(r, whatsappPath(r, "/qr.png"))
+	resp.QRPageURL = absoluteURL(r, whatsappPath(r, "/qr"))
 }
 
 func absoluteURL(r *http.Request, path string) string {
@@ -157,4 +158,12 @@ func absoluteURL(r *http.Request, path string) string {
 		Path:   path,
 	}
 	return u.String()
+}
+
+func whatsappPath(r *http.Request, suffix string) string {
+	base := "/whatsapp"
+	if strings.HasPrefix(r.URL.Path, "/app/whatsapp") {
+		base = "/app/whatsapp"
+	}
+	return base + suffix
 }

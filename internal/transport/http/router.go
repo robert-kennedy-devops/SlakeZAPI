@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/whatsapp-saas/api/internal/domain"
 	"github.com/whatsapp-saas/api/internal/middleware"
 	"github.com/whatsapp-saas/api/internal/observability"
 	"github.com/whatsapp-saas/api/internal/queue"
@@ -19,6 +20,7 @@ func NewRouter(
 	db *sql.DB,
 	pool *queue.Pool,
 	authUC *usecase.AuthUsecase,
+	userAuthUC *usecase.UserAuthUsecase,
 	msgUC *usecase.MessageUsecase,
 	waUC *usecase.WhatsAppUsecase,
 	hookUC *usecase.WebhookUsecase,
@@ -27,10 +29,12 @@ func NewRouter(
 	metrics *observability.Metrics,
 	startedAt time.Time,
 	rateRPS int,
+	corsAllowedOrigins []string,
 	log *logger.Logger,
 ) http.Handler {
 	// ── Handlers ────────────────────────────────────────────────────────────
 	authH := handler.NewAuthHandler(authUC, log)
+	userAuthH := handler.NewUserAuthHandler(userAuthUC, log)
 	msgH := handler.NewMessageHandler(msgUC, log)
 	waH := handler.NewWhatsAppHandler(waUC, log)
 	hookH := handler.NewWebhookHandler(hookUC, billingUC, log)
@@ -40,6 +44,14 @@ func NewRouter(
 	withAuth := func(h http.HandlerFunc) http.Handler {
 		return middleware.Auth(authUC, log)(
 			middleware.RateLimit(rateRPS)(h),
+		)
+	}
+	withUserAuth := func(h http.HandlerFunc) http.Handler {
+		return middleware.UserAuth(userAuthUC, log)(h)
+	}
+	withUserRole := func(h http.HandlerFunc, roles ...domain.UserRole) http.Handler {
+		return middleware.UserAuth(userAuthUC, log)(
+			middleware.RequireUserRole(roles...)(h),
 		)
 	}
 
@@ -52,6 +64,35 @@ func NewRouter(
 	mux.HandleFunc("GET /livez", obsH.Livez)
 	mux.Handle("GET /metrics", metrics.Handler())
 	mux.HandleFunc("POST /auth/bootstrap", authH.Bootstrap)
+	mux.HandleFunc("POST /app/auth/signup", userAuthH.SignUp)
+	mux.HandleFunc("POST /app/auth/login", userAuthH.Login)
+	mux.Handle("POST /app/auth/logout", withUserAuth(userAuthH.Logout))
+	mux.Handle("GET /app/auth/me", withUserAuth(userAuthH.Me))
+	mux.Handle("GET /app/tenant/summary", withUserRole(authH.Me, domain.UserRoleOwner, domain.UserRoleAdmin, domain.UserRoleOperator, domain.UserRoleViewer))
+
+	// App dashboard routes (user session based)
+	mux.Handle("GET /app/apikeys", withUserRole(authH.ListAPIKeys, domain.UserRoleOwner, domain.UserRoleAdmin))
+	mux.Handle("POST /app/apikeys", withUserRole(authH.CreateAPIKey, domain.UserRoleOwner, domain.UserRoleAdmin))
+	mux.Handle("DELETE /app/apikeys/{id}", withUserRole(authH.RevokeAPIKey, domain.UserRoleOwner, domain.UserRoleAdmin))
+
+	mux.Handle("POST /app/whatsapp/connect", withUserRole(waH.Connect, domain.UserRoleOwner, domain.UserRoleAdmin))
+	mux.Handle("GET /app/whatsapp/status", withUserRole(waH.Status, domain.UserRoleOwner, domain.UserRoleAdmin, domain.UserRoleOperator, domain.UserRoleViewer))
+	mux.Handle("GET /app/whatsapp/qr", withUserRole(waH.QRPage, domain.UserRoleOwner, domain.UserRoleAdmin))
+	mux.Handle("GET /app/whatsapp/qr.png", withUserRole(waH.QRPNG, domain.UserRoleOwner, domain.UserRoleAdmin))
+	mux.Handle("POST /app/whatsapp/disconnect", withUserRole(waH.Disconnect, domain.UserRoleOwner, domain.UserRoleAdmin))
+	mux.Handle("POST /app/whatsapp/logout", withUserRole(waH.Logout, domain.UserRoleOwner, domain.UserRoleAdmin))
+
+	mux.Handle("POST /app/messages/send", withUserRole(msgH.Send, domain.UserRoleOwner, domain.UserRoleAdmin, domain.UserRoleOperator))
+	mux.Handle("POST /app/messages/send-media", withUserRole(msgH.SendMedia, domain.UserRoleOwner, domain.UserRoleAdmin, domain.UserRoleOperator))
+	mux.Handle("GET /app/messages", withUserRole(msgH.List, domain.UserRoleOwner, domain.UserRoleAdmin, domain.UserRoleOperator, domain.UserRoleViewer))
+	mux.Handle("GET /app/messages/{id}", withUserRole(msgH.Get, domain.UserRoleOwner, domain.UserRoleAdmin, domain.UserRoleOperator, domain.UserRoleViewer))
+	mux.Handle("GET /app/messages/{id}/media", withUserRole(msgH.GetMedia, domain.UserRoleOwner, domain.UserRoleAdmin, domain.UserRoleOperator, domain.UserRoleViewer))
+
+	mux.Handle("POST /app/webhooks", withUserRole(hookH.Register, domain.UserRoleOwner, domain.UserRoleAdmin))
+	mux.Handle("GET /app/webhooks", withUserRole(hookH.List, domain.UserRoleOwner, domain.UserRoleAdmin, domain.UserRoleOperator, domain.UserRoleViewer))
+	mux.Handle("DELETE /app/webhooks/{id}", withUserRole(hookH.Delete, domain.UserRoleOwner, domain.UserRoleAdmin))
+	mux.Handle("GET /app/usage", withUserRole(hookH.Usage, domain.UserRoleOwner, domain.UserRoleAdmin, domain.UserRoleOperator, domain.UserRoleViewer))
+	mux.Handle("GET /app/ws", withUserRole(hub.ServeHTTP, domain.UserRoleOwner, domain.UserRoleAdmin, domain.UserRoleOperator, domain.UserRoleViewer))
 
 	// Auth (requires existing API key to create a new one)
 	mux.Handle("POST /auth/apikey", withAuth(authH.CreateAPIKey))
@@ -88,6 +129,7 @@ func NewRouter(
 	root = middleware.Logging(log)(root)
 	root = middleware.Recover(log)(root)
 	root = middleware.RequestID(root)
+	root = middleware.CORS(corsAllowedOrigins)(root)
 	root = metrics.Instrument(root)
 
 	return root

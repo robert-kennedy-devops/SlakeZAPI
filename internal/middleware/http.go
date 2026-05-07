@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -60,10 +61,10 @@ func (rw *responseWriter) WriteHeader(code int) {
 
 // bucket tracks a sliding window token bucket per key.
 type bucket struct {
-	mu       sync.Mutex
-	tokens   float64
-	last     time.Time
-	rps      float64 // refill rate: tokens per second
+	mu     sync.Mutex
+	tokens float64
+	last   time.Time
+	rps    float64 // refill rate: tokens per second
 }
 
 func (b *bucket) allow() bool {
@@ -139,4 +140,44 @@ func Recover(log *logger.Logger) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// CORS enables browser access for configured origins.
+func CORS(allowedOrigins []string) func(http.Handler) http.Handler {
+	allowed := make(map[string]struct{}, len(allowedOrigins))
+	allowAll := false
+	for _, origin := range allowedOrigins {
+		origin = strings.TrimSpace(origin)
+		if origin == "" {
+			continue
+		}
+		if origin == "*" {
+			allowAll = true
+		}
+		allowed[origin] = struct{}{}
+	}
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			origin := r.Header.Get("Origin")
+			if origin != "" && (allowAll || hasOrigin(allowed, origin)) {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Vary", "Origin")
+				w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Request-ID, X-Tenant-ID")
+				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+			}
+
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func hasOrigin(allowed map[string]struct{}, origin string) bool {
+	_, ok := allowed[origin]
+	return ok
 }

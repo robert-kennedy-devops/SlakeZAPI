@@ -146,3 +146,92 @@ func TestMessageRepositoryPersistsMediaFields(t *testing.T) {
 		t.Fatalf("unexpected message media keys: %+v", got)
 	}
 }
+
+func TestUserRepositoriesLifecycle(t *testing.T) {
+	db := testutil.OpenTestDB(t)
+	ctx := context.Background()
+
+	userRepo := NewUserRepository(db)
+	tenantRepo := NewTenantRepository(db)
+	tenantUserRepo := NewTenantUserRepository(db)
+	userSessionRepo := NewUserSessionRepository(db)
+
+	now := time.Now().UTC()
+	user := &domain.User{
+		ID:           uuid.NewString(),
+		Email:        "owner@example.com",
+		Name:         "Owner User",
+		PasswordHash: "hashed-password",
+		Active:       true,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	if err := userRepo.Create(ctx, user); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	gotUser, err := userRepo.GetByEmail(ctx, user.Email)
+	if err != nil {
+		t.Fatalf("get user by email: %v", err)
+	}
+	if gotUser.ID != user.ID || gotUser.Name != user.Name {
+		t.Fatalf("unexpected user loaded: %+v", gotUser)
+	}
+
+	tenant := &domain.Tenant{
+		ID:        uuid.NewString(),
+		Name:      "Tenant Auth",
+		Email:     "tenant-auth@example.com",
+		Active:    true,
+		CreatedAt: now,
+	}
+	if err := tenantRepo.Create(ctx, tenant); err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+
+	membership := &domain.TenantUser{
+		ID:        uuid.NewString(),
+		TenantID:  tenant.ID,
+		UserID:    user.ID,
+		Role:      domain.UserRoleOwner,
+		CreatedAt: now,
+	}
+	if err := tenantUserRepo.Create(ctx, membership); err != nil {
+		t.Fatalf("create tenant user: %v", err)
+	}
+
+	gotMembership, err := tenantUserRepo.GetByUserAndTenant(ctx, user.ID, tenant.ID)
+	if err != nil {
+		t.Fatalf("get tenant membership: %v", err)
+	}
+	if gotMembership.Role != domain.UserRoleOwner {
+		t.Fatalf("unexpected membership loaded: %+v", gotMembership)
+	}
+
+	session := &domain.UserSession{
+		ID:         uuid.NewString(),
+		UserID:     user.ID,
+		TokenHash:  "token-hash-1",
+		ExpiresAt:  now.Add(24 * time.Hour),
+		CreatedAt:  now,
+		LastUsedAt: now,
+	}
+	if err := userSessionRepo.Create(ctx, session); err != nil {
+		t.Fatalf("create user session: %v", err)
+	}
+
+	gotSession, err := userSessionRepo.GetByHash(ctx, session.TokenHash)
+	if err != nil {
+		t.Fatalf("get session by hash: %v", err)
+	}
+	if gotSession.ID != session.ID || gotSession.UserID != user.ID {
+		t.Fatalf("unexpected session loaded: %+v", gotSession)
+	}
+
+	if err := userSessionRepo.DeleteByUser(ctx, user.ID); err != nil {
+		t.Fatalf("delete sessions by user: %v", err)
+	}
+	if _, err := userSessionRepo.GetByHash(ctx, session.TokenHash); err != domain.ErrUserSessionNotFound {
+		t.Fatalf("expected session not found after delete, got %v", err)
+	}
+}

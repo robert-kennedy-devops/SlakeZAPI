@@ -1,0 +1,61 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html {
+  background:
+    radial-gradient(circle at top, rgba(79, 209, 255, 0.16), transparent 34%),
+    radial-gradient(circle at 80% 0%, rgba(122, 247, 167, 0.14), transparent 24%),
+    linear-gradient(180deg, #020817 0%, #08111f 100%);
+}
+
+body {
+  font-family: var(--font-body), sans-serif;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-display), sans-serif;
+}
+
+.grid-background {
+  background-image: linear-gradient(rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+@layer components {
+  .panel {
+    @apply rounded-3xl border border-line bg-panel/90 shadow-panel backdrop-blur-xl;
+  }
+
+  .panel-title {
+    @apply text-sm font-semibold uppercase tracking-[0.28em] text-slate-400;
+  }
+
+  .input {
+    @apply h-11 w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 text-sm text-white outline-none transition focus:border-glow focus:ring-2 focus:ring-glow/20;
+  }
+
+  .button-primary {
+    @apply inline-flex items-center justify-center rounded-2xl bg-glow px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .button-secondary {
+    @apply inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-white/10;
+  }
+
+  .button-danger {
+    @apply inline-flex items-center justify-center rounded-2xl border border-danger/40 bg-danger/10 px-4 py-2.5 text-sm font-semibold text-danger transition hover:bg-danger/20;
+  }
+
+  .badge {
+    @apply inline-flex items-center rounded-full border border-white/10 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.22em] text-slate-300;
+  }
+}

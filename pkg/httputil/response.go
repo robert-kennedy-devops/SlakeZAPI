@@ -33,10 +33,11 @@ func Error(w http.ResponseWriter, status int, msg string) {
 // DomainError maps domain errors to HTTP status codes.
 func DomainError(w http.ResponseWriter, err error) {
 	switch err {
-	case domain.ErrUnauthorized, domain.ErrInvalidAPIKey:
+	case domain.ErrUnauthorized, domain.ErrInvalidAPIKey, domain.ErrInvalidCredentials, domain.ErrUserSessionExpired:
 		Error(w, http.StatusUnauthorized, err.Error())
 	case domain.ErrTenantNotFound, domain.ErrMessageNotFound,
-		domain.ErrWebhookNotFound, domain.ErrSessionNotFound, domain.ErrSessionMetadataNotFound:
+		domain.ErrWebhookNotFound, domain.ErrSessionNotFound, domain.ErrSessionMetadataNotFound,
+		domain.ErrUserNotFound, domain.ErrUserSessionNotFound:
 		Error(w, http.StatusNotFound, err.Error())
 	case domain.ErrLimitExceeded:
 		Error(w, http.StatusPaymentRequired, err.Error())
@@ -44,7 +45,9 @@ func DomainError(w http.ResponseWriter, err error) {
 		Error(w, http.StatusConflict, err.Error())
 	case domain.ErrBadRequest, domain.ErrInvalidPhone, domain.ErrNoSubscription, domain.ErrMessageMediaAbsent:
 		Error(w, http.StatusBadRequest, err.Error())
-	case domain.ErrSessionNotConnected:
+	case domain.ErrTenantAccessDenied, domain.ErrUserRoleForbidden:
+		Error(w, http.StatusForbidden, err.Error())
+	case domain.ErrSessionNotConnected, domain.ErrUserInactive, domain.ErrTenantInactive:
 		Error(w, http.StatusConflict, err.Error())
 	default:
 		Error(w, http.StatusInternalServerError, "internal server error")

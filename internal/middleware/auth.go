@@ -48,5 +48,5 @@ func extractBearer(r *http.Request) string {
 	if strings.HasPrefix(h, "Bearer ") {
 		return strings.TrimPrefix(h, "Bearer ")
 	}
-	return ""
+	return strings.TrimSpace(r.URL.Query().Get("access_token"))
 }

@@ -14,6 +14,44 @@ type Tenant struct {
 	Active    bool      `json:"active"`
 }
 
+// ─── Users ──────────────────────────────────────────────────────────────────
+
+type User struct {
+	ID           string    `json:"id"`
+	Email        string    `json:"email"`
+	Name         string    `json:"name"`
+	PasswordHash string    `json:"-"`
+	Active       bool      `json:"active"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+type UserRole string
+
+const (
+	UserRoleOwner    UserRole = "owner"
+	UserRoleAdmin    UserRole = "admin"
+	UserRoleOperator UserRole = "operator"
+	UserRoleViewer   UserRole = "viewer"
+)
+
+type TenantUser struct {
+	ID        string    `json:"id"`
+	TenantID  string    `json:"tenant_id"`
+	UserID    string    `json:"user_id"`
+	Role      UserRole  `json:"role"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type UserSession struct {
+	ID         string    `json:"id"`
+	UserID     string    `json:"user_id"`
+	TokenHash  string    `json:"-"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	CreatedAt  time.Time `json:"created_at"`
+	LastUsedAt time.Time `json:"last_used_at"`
+}
+
 // ─── APIKey ─────────────────────────────────────────────────────────────────
 
 type APIKey struct {
@@ -250,4 +288,32 @@ type ConnectResponse struct {
 type RegisterWebhookRequest struct {
 	URL    string   `json:"url"`
 	Events []string `json:"events"`
+}
+
+type SignUpRequest struct {
+	Name       string   `json:"name"`
+	Email      string   `json:"email"`
+	Password   string   `json:"password"`
+	TenantName string   `json:"tenant_name"`
+	Plan       PlanName `json:"plan"`
+}
+
+type LoginRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+type AuthSessionResponse struct {
+	Token      string      `json:"token"`
+	ExpiresAt  time.Time   `json:"expires_at"`
+	User       *User       `json:"user"`
+	Tenant     *Tenant     `json:"tenant"`
+	Membership *TenantUser `json:"membership"`
+}
+
+type CurrentUserResponse struct {
+	User        *User        `json:"user"`
+	Tenant      *Tenant      `json:"tenant"`
+	Membership  *TenantUser  `json:"membership"`
+	Memberships []TenantUser `json:"memberships,omitempty"`
 }

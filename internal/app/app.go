@@ -43,6 +43,9 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 
 	// ── Repositories ────────────────────────────────────────────────────────
 	tenantRepo := repository.NewTenantRepository(db)
+	userRepo := repository.NewUserRepository(db)
+	tenantUserRepo := repository.NewTenantUserRepository(db)
+	userSessionRepo := repository.NewUserSessionRepository(db)
 	apiKeyRepo := repository.NewAPIKeyRepository(db)
 	msgRepo := repository.NewMessageRepository(db)
 	sessionRepo := repository.NewSessionRepository(db)
@@ -64,6 +67,7 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 
 	// ── Use Cases ───────────────────────────────────────────────────────────
 	authUC := usecase.NewAuthUsecase(apiKeyRepo, tenantRepo, subRepo, billingSvc, waMgr, cfg.APIKeySalt, log)
+	userAuthUC := usecase.NewUserAuthUsecase(userRepo, tenantRepo, tenantUserRepo, userSessionRepo, subRepo, log)
 	msgUC := usecase.NewMessageUsecase(msgRepo, waMgr, billingSvc, eventBus, log)
 	waUC := usecase.NewWhatsAppUsecase(waMgr, eventBus, log)
 	webhookUC := usecase.NewWebhookUsecase(webhookRepo, subRepo, log)
@@ -82,8 +86,8 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 	// ── HTTP Router ──────────────────────────────────────────────────────────
 	router := transportHTTP.NewRouter(
 		db, workerPool,
-		authUC, msgUC, waUC, webhookUC, billingUC,
-		hub, metrics, startedAt, cfg.RateLimitRPS, log,
+		authUC, userAuthUC, msgUC, waUC, webhookUC, billingUC,
+		hub, metrics, startedAt, cfg.RateLimitRPS, cfg.CORSAllowedOrigins, log,
 	)
 
 	server := &http.Server{

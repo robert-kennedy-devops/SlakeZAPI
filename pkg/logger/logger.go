@@ -23,6 +23,7 @@ type contextKey string
 const (
 	keyRequestID contextKey = "request_id"
 	keyTenantID  contextKey = "tenant_id"
+	keyUserID    contextKey = "user_id"
 )
 
 // Logger is a minimal structured JSON logger.
@@ -56,6 +57,9 @@ func (l *Logger) WithContext(ctx context.Context) *Logger {
 	}
 	if tid, ok := ctx.Value(keyTenantID).(string); ok && tid != "" {
 		lg = lg.WithField("tenant_id", tid)
+	}
+	if uid, ok := ctx.Value(keyUserID).(string); ok && uid != "" {
+		lg = lg.WithField("user_id", uid)
 	}
 	return lg
 }
@@ -118,6 +122,10 @@ func WithTenantID(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, keyTenantID, id)
 }
 
+func WithUserID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, keyUserID, id)
+}
+
 func RequestIDFromCtx(ctx context.Context) string {
 	v, _ := ctx.Value(keyRequestID).(string)
 	return v
@@ -125,5 +133,10 @@ func RequestIDFromCtx(ctx context.Context) string {
 
 func TenantIDFromCtx(ctx context.Context) string {
 	v, _ := ctx.Value(keyTenantID).(string)
+	return v
+}
+
+func UserIDFromCtx(ctx context.Context) string {
+	v, _ := ctx.Value(keyUserID).(string)
 	return v
 }

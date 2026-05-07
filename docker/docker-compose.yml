@@ -1,27 +1,23 @@
-version: "3.9"
-
 services:
-  # ── PostgreSQL ──────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
     container_name: whatsapp_saas_db
     restart: unless-stopped
     environment:
-      POSTGRES_USER:     ${POSTGRES_USER:-saas}
+      POSTGRES_USER: ${POSTGRES_USER:-saas}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-saaspassword}
-      POSTGRES_DB:       ${POSTGRES_DB:-whatsapp_saas}
+      POSTGRES_DB: ${POSTGRES_DB:-whatsapp_saas}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./migrations:/docker-entrypoint-initdb.d:ro   # auto-run on first start
+      - ../migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-saas}"]
       interval: 5s
       timeout: 5s
       retries: 10
 
-  # ── API ─────────────────────────────────────────────────────
   api:
     build:
       context: ..
@@ -32,16 +28,17 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      HTTP_PORT:          8080
-      DATABASE_URL:       postgres://${POSTGRES_USER:-saas}:${POSTGRES_PASSWORD:-saaspassword}@postgres:5432/${POSTGRES_DB:-whatsapp_saas}?sslmode=disable
-      API_KEY_SALT:       ${API_KEY_SALT:-change-me-in-production}
+      HTTP_PORT: 8080
+      DATABASE_URL: postgres://${POSTGRES_USER:-saas}:${POSTGRES_PASSWORD:-saaspassword}@postgres:5432/${POSTGRES_DB:-whatsapp_saas}?sslmode=disable
+      API_KEY_SALT: ${API_KEY_SALT:-change-me-in-production}
       WHATSAPP_DATA_PATH: /data/whatsapp
-      WORKER_COUNT:       ${WORKER_COUNT:-10}
-      QUEUE_BUFFER_SIZE:  ${QUEUE_BUFFER_SIZE:-500}
-      WEBHOOK_TIMEOUT:    ${WEBHOOK_TIMEOUT:-10s}
-      WEBHOOK_RETRIES:    ${WEBHOOK_RETRIES:-3}
-      RATE_LIMIT_RPS:     ${RATE_LIMIT_RPS:-10}
-      SHUTDOWN_TIMEOUT:   ${SHUTDOWN_TIMEOUT:-10s}
+      WORKER_COUNT: ${WORKER_COUNT:-10}
+      QUEUE_BUFFER_SIZE: ${QUEUE_BUFFER_SIZE:-500}
+      WEBHOOK_TIMEOUT: ${WEBHOOK_TIMEOUT:-10s}
+      WEBHOOK_RETRIES: ${WEBHOOK_RETRIES:-3}
+      RATE_LIMIT_RPS: ${RATE_LIMIT_RPS:-10}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
+      SHUTDOWN_TIMEOUT: ${SHUTDOWN_TIMEOUT:-10s}
     ports:
       - "${HTTP_PORT:-8080}:8080"
     volumes:
@@ -51,6 +48,20 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  web:
+    build:
+      context: ..
+      dockerfile: web/Dockerfile
+    container_name: whatsapp_saas_web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}
+    ports:
+      - "3000:3000"
 
 volumes:
   postgres_data:

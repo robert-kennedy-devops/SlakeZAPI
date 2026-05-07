@@ -186,6 +186,100 @@ func TestRouterDownloadsInboundMedia(t *testing.T) {
 	}
 }
 
+func TestRouterUserAuthSignUpLoginAndMe(t *testing.T) {
+	db := testutil.OpenTestDB(t)
+	server := newIntegrationServer(t, db)
+
+	signUpResp := domain.AuthSessionResponse{}
+	requestJSON(t, server, http.MethodPost, "/app/auth/signup", "", map[string]string{
+		"name":        "Owner App",
+		"email":       "owner@app.example",
+		"password":    "supersecret123",
+		"tenant_name": "Workspace App",
+		"plan":        "starter",
+	}, http.StatusCreated, &signUpResp)
+	if signUpResp.Token == "" || signUpResp.User == nil || signUpResp.Tenant == nil || signUpResp.Membership == nil {
+		t.Fatalf("unexpected signup response: %+v", signUpResp)
+	}
+	if signUpResp.Membership.Role != domain.UserRoleOwner {
+		t.Fatalf("expected owner role, got %+v", signUpResp.Membership)
+	}
+
+	meResp := domain.CurrentUserResponse{}
+	requestJSON(t, server, http.MethodGet, "/app/auth/me", signUpResp.Token, nil, http.StatusOK, &meResp)
+	if meResp.User == nil || meResp.User.Email != "owner@app.example" {
+		t.Fatalf("unexpected /app/auth/me response: %+v", meResp)
+	}
+
+	loginResp := domain.AuthSessionResponse{}
+	requestJSON(t, server, http.MethodPost, "/app/auth/login", "", map[string]string{
+		"email":    "owner@app.example",
+		"password": "supersecret123",
+	}, http.StatusOK, &loginResp)
+	if loginResp.Token == "" || loginResp.User == nil || loginResp.User.ID != signUpResp.User.ID {
+		t.Fatalf("unexpected login response: %+v", loginResp)
+	}
+
+	summaryResp := domain.TenantSummary{}
+	requestJSONWithHeaders(t, server, http.MethodGet, "/app/tenant/summary", signUpResp.Token, nil, http.StatusOK, &summaryResp, map[string]string{
+		"X-Tenant-ID": signUpResp.Tenant.ID,
+	})
+	if summaryResp.Tenant == nil || summaryResp.Tenant.ID != signUpResp.Tenant.ID {
+		t.Fatalf("unexpected tenant summary: %+v", summaryResp)
+	}
+}
+
+func TestRouterAppRoutesRespectUserRole(t *testing.T) {
+	db := testutil.OpenTestDB(t)
+	server := newIntegrationServer(t, db)
+
+	signUpResp := domain.AuthSessionResponse{}
+	requestJSON(t, server, http.MethodPost, "/app/auth/signup", "", map[string]string{
+		"name":        "Viewer App",
+		"email":       "viewer@app.example",
+		"password":    "supersecret123",
+		"tenant_name": "Workspace Viewer",
+		"plan":        "growth",
+	}, http.StatusCreated, &signUpResp)
+
+	if _, err := db.Exec(`UPDATE tenant_users SET role = 'viewer' WHERE id = $1`, signUpResp.Membership.ID); err != nil {
+		t.Fatalf("downgrade membership role: %v", err)
+	}
+
+	requestJSONWithHeaders(t, server, http.MethodGet, "/app/messages", signUpResp.Token, nil, http.StatusOK, &[]domain.Message{}, map[string]string{
+		"X-Tenant-ID": signUpResp.Tenant.ID,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/app/messages/send", bytes.NewReader([]byte(`{"phone":"5511999999999","message":"forbidden"}`)))
+	req.Header.Set("Authorization", "Bearer "+signUpResp.Token)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Tenant-ID", signUpResp.Tenant.ID)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for viewer send, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRouterCORSPreflight(t *testing.T) {
+	db := testutil.OpenTestDB(t)
+	server := newIntegrationServer(t, db)
+
+	req := httptest.NewRequest(http.MethodOptions, "/app/auth/login", nil)
+	req.Header.Set("Origin", "http://localhost:3000")
+	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204 for preflight, got %d", rec.Code)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "http://localhost:3000" {
+		t.Fatalf("unexpected allow origin header: %q", got)
+	}
+}
+
 func newIntegrationServer(t *testing.T, db *sql.DB) http.Handler {
 	t.Helper()
 
@@ -201,6 +295,9 @@ func newIntegrationServer(t *testing.T, db *sql.DB) http.Handler {
 	pool.Start(ctx)
 
 	tenantRepo := repository.NewTenantRepository(db)
+	userRepo := repository.NewUserRepository(db)
+	tenantUserRepo := repository.NewTenantUserRepository(db)
+	userSessionRepo := repository.NewUserSessionRepository(db)
 	apiKeyRepo := repository.NewAPIKeyRepository(db)
 	msgRepo := repository.NewMessageRepository(db)
 	webhookRepo := repository.NewWebhookRepository(db)
@@ -213,6 +310,7 @@ func newIntegrationServer(t *testing.T, db *sql.DB) http.Handler {
 	}
 	billingSvc := billing.NewService(usageRepo, subRepo, log)
 	authUC := usecase.NewAuthUsecase(apiKeyRepo, tenantRepo, subRepo, billingSvc, waSvc, "test-salt", log)
+	userAuthUC := usecase.NewUserAuthUsecase(userRepo, tenantRepo, tenantUserRepo, userSessionRepo, subRepo, log)
 	msgUC := usecase.NewMessageUsecase(msgRepo, waSvc, billingSvc, eventBus, log)
 	waUC := usecase.NewWhatsAppUsecase(waSvc, eventBus, log)
 	webhookUC := usecase.NewWebhookUsecase(webhookRepo, subRepo, log)
@@ -223,6 +321,7 @@ func newIntegrationServer(t *testing.T, db *sql.DB) http.Handler {
 		db,
 		pool,
 		authUC,
+		userAuthUC,
 		msgUC,
 		waUC,
 		webhookUC,
@@ -231,11 +330,17 @@ func newIntegrationServer(t *testing.T, db *sql.DB) http.Handler {
 		metrics,
 		time.Now().UTC(),
 		1000,
+		[]string{"http://localhost:3000"},
 		log,
 	)
 }
 
 func requestJSON(t *testing.T, handler http.Handler, method, path, apiKey string, body any, wantStatus int, out any) {
+	t.Helper()
+	requestJSONWithHeaders(t, handler, method, path, apiKey, body, wantStatus, out, nil)
+}
+
+func requestJSONWithHeaders(t *testing.T, handler http.Handler, method, path, apiKey string, body any, wantStatus int, out any, headers map[string]string) {
 	t.Helper()
 
 	var payload []byte
@@ -253,6 +358,9 @@ func requestJSON(t *testing.T, handler http.Handler, method, path, apiKey string
 	}
 	if apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+	for key, value := range headers {
+		req.Header.Set(key, value)
 	}
 
 	rec := httptest.NewRecorder()

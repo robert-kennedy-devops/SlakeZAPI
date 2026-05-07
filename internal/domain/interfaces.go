@@ -8,7 +8,32 @@ import "context"
 type TenantRepository interface {
 	Create(ctx context.Context, tenant *Tenant) error
 	GetByID(ctx context.Context, id string) (*Tenant, error)
+	GetByEmail(ctx context.Context, email string) (*Tenant, error)
 	Update(ctx context.Context, tenant *Tenant) error
+}
+
+// UserRepository handles user persistence.
+type UserRepository interface {
+	Create(ctx context.Context, user *User) error
+	GetByID(ctx context.Context, id string) (*User, error)
+	GetByEmail(ctx context.Context, email string) (*User, error)
+	Update(ctx context.Context, user *User) error
+}
+
+// TenantUserRepository handles user membership in tenants.
+type TenantUserRepository interface {
+	Create(ctx context.Context, tenantUser *TenantUser) error
+	GetByUserAndTenant(ctx context.Context, userID, tenantID string) (*TenantUser, error)
+	ListByUser(ctx context.Context, userID string) ([]TenantUser, error)
+}
+
+// UserSessionRepository handles authenticated user sessions.
+type UserSessionRepository interface {
+	Create(ctx context.Context, session *UserSession) error
+	GetByHash(ctx context.Context, tokenHash string) (*UserSession, error)
+	DeleteByID(ctx context.Context, id string) error
+	DeleteByUser(ctx context.Context, userID string) error
+	UpdateLastUsed(ctx context.Context, id string) error
 }
 
 // APIKeyRepository handles API key persistence.

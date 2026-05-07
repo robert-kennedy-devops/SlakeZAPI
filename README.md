@@ -1,6 +1,6 @@
 # 🟢 WhatsApp SaaS API — Go
 
-Plataforma SaaS para envio e recebimento de mensagens WhatsApp, construída em **Go** com **Clean Architecture**, integração real via **WhatsMeow** e suporte a múltiplos tenants.
+Plataforma SaaS para envio e recebimento de mensagens WhatsApp, construída em **Go** com **Clean Architecture**, integração real via **WhatsMeow**, suporte a múltiplos tenants e um frontend moderno em **Next.js** para operação do cliente final.
 
 ---
 
@@ -62,8 +62,12 @@ whatsapp-saas/
 ├── migrations/
 │   └── 001_initial.sql          # Schema completo + índices
 ├── docker/
-│   ├── Dockerfile               # Multi-stage build (scratch)
-│   └── docker-compose.yml       # API + PostgreSQL
+│   ├── Dockerfile               # Multi-stage build da API
+│   └── docker-compose.yml       # API + PostgreSQL + frontend
+├── web/
+│   ├── src/app/                 # App Router (login, signup, dashboard)
+│   ├── src/components/          # Dashboard e providers React Query
+│   └── src/lib/                 # API client, auth local e tipos do frontend
 ├── .env.example
 └── go.mod
 ```
@@ -90,21 +94,36 @@ cp .env.example .env
 ### 2. Subir com Docker Compose
 
 ```bash
-cd docker
-docker compose up --build
+make docker-up
 ```
 
-A API estará disponível em `http://localhost:8080`.
+Endpoints locais:
+
+- Frontend: `http://localhost:3000`
+- API: `http://localhost:8080`
 
 ### 3. Rodar localmente (sem Docker)
 
 ```bash
-# Suba apenas o banco
-docker compose up postgres -d
+# Terminal 1: banco
+make docker-db
 
-# Configure o .env e rode a API
-go run ./cmd/api
+# Terminal 2: API
+make run
+
+# Terminal 3: frontend
+make web-dev
 ```
+
+### 4. Frontend
+
+O painel web usa login de usuário em `/app/auth/*`, seleção de tenant por header `X-Tenant-ID` e realtime via `/app/ws`.
+
+- login: `POST /app/auth/login`
+- signup: `POST /app/auth/signup`
+- perfil/sessão: `GET /app/auth/me`
+- dashboard summary: `GET /app/tenant/summary`
+- mensagens, webhooks, credenciais e sessão WhatsApp via `/app/*`
 
 ---
 
@@ -137,6 +156,18 @@ go run ./cmd/api
 | `DELETE` | `/webhook/{id}` | Desativar webhook |
 | `GET` | `/usage` | Consultar uso mensal atual |
 | `GET` | `/ws` | WebSocket — eventos em tempo real |
+| `POST` | `/app/auth/signup` | Criar usuário, tenant owner e sessão do app |
+| `POST` | `/app/auth/login` | Autenticar usuário do dashboard |
+| `GET` | `/app/auth/me` | Consultar usuário atual e memberships |
+| `GET` | `/app/tenant/summary` | Resumo do tenant selecionado |
+| `GET` | `/app/messages` | Listar mensagens usando sessão de usuário |
+| `POST` | `/app/messages/send` | Enviar mensagem usando sessão de usuário |
+| `POST` | `/app/messages/send-media` | Enviar mídia usando sessão de usuário |
+| `GET` | `/app/webhooks` | Listar webhooks no dashboard |
+| `POST` | `/app/webhooks` | Criar webhook no dashboard |
+| `GET` | `/app/apikeys` | Listar API keys no dashboard |
+| `POST` | `/app/apikeys` | Criar API key no dashboard |
+| `GET` | `/app/ws` | WebSocket do dashboard |
 
 ### Autenticação
 
@@ -144,6 +175,19 @@ Todas as rotas, exceto `/health` e `/auth/bootstrap`, requerem o header:
 
 ```
 Authorization: Bearer <API_KEY>
+```
+
+As rotas de dashboard em `/app/*` aceitam:
+
+```http
+Authorization: Bearer <USER_SESSION_TOKEN>
+X-Tenant-ID: <tenant_id>
+```
+
+Para WebSocket do navegador e QR/image endpoints do dashboard, o token também pode ser enviado via query string:
+
+```text
+?access_token=<token>&tenant_id=<tenant_id>
 ```
 
 ---
@@ -279,9 +323,9 @@ Headers enviados:
 ### WebSocket — Eventos em Tempo Real
 
 ```javascript
-const ws = new WebSocket('ws://localhost:8080/ws', [], {
-  headers: { Authorization: 'Bearer sua_api_key' }
-});
+const ws = new WebSocket(
+  'ws://localhost:8080/app/ws?access_token=sua_sessao&tenant_id=tenant_123'
+);
 
 ws.onmessage = (e) => {
   const event = JSON.parse(e.data);
@@ -311,6 +355,7 @@ Quando o limite é excedido, a API retorna `HTTP 402 Payment Required`.
 - **Webhooks** são assinados via HMAC-SHA256 no header `X-Webhook-Signature`
 - Eventos de webhook são entregues em envelope versionado (`version: "v1"`) com `id` e `timestamp`
 - **Rate limiting** por tenant (token bucket, configurável via `RATE_LIMIT_RPS`)
+- **CORS** configurável para o frontend via `CORS_ALLOWED_ORIGINS`
 
 ## 📈 Observabilidade
 
@@ -372,6 +417,8 @@ Fluxo operacional:
 | `WEBHOOK_RETRIES` | `3` | Tentativas de retry (backoff exp.) |
 | `RATE_LIMIT_RPS` | `10` | Requisições/segundo por tenant |
 | `SHUTDOWN_TIMEOUT` | `10s` | Timeout para graceful shutdown |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:3000` | Origins permitidas para o frontend |
+| `NEXT_PUBLIC_API_URL` | `http://localhost:8080` | Base URL usada pelo frontend Next.js |
 
 ---
 
@@ -379,7 +426,29 @@ Fluxo operacional:
 
 ```bash
 go test ./...
+cd web && npm run build
 ```
+
+---
+
+## 🖥️ Frontend
+
+O frontend fica em `web/` e foi construído com:
+
+- `Next.js` + `React` + `TypeScript`
+- `Tailwind CSS`
+- `TanStack Query`
+- autenticação por sessão de usuário
+- QR code, mensagens, webhooks, API keys e uso mensal no mesmo dashboard
+
+Fluxo principal:
+
+- `/signup` cria usuário + workspace
+- `/login` autentica a sessão do app
+- `/dashboard` consome as rotas `/app/*`
+- realtime chega por `/app/ws`
+
+Com isso, a API continua apta para integrações via API key e o produto ganha uma camada SaaS pronta para operação humana.
 
 Para rodar os testes de integração com PostgreSQL real, defina `TEST_DATABASE_URL` ou reutilize `DATABASE_URL`.
 
