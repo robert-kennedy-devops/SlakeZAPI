@@ -5,7 +5,11 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { api } from "@/lib/api";
-import { setAuthToken, setSelectedTenantID } from "@/lib/auth";
+import {
+  setAuthToken,
+  setAuthTokenExpiry,
+  setSelectedTenantID,
+} from "@/lib/auth";
 
 export default function SignUpPage() {
   const router = useRouter();
@@ -26,6 +30,7 @@ export default function SignUpPage() {
     try {
       const response = await api.signUp(form);
       setAuthToken(response.token);
+      setAuthTokenExpiry(response.expires_at);
       setSelectedTenantID(response.tenant.id);
       router.push("/dashboard");
     } catch (err) {
@@ -35,7 +40,10 @@ export default function SignUpPage() {
     }
   }
 
-  function update<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
+  function update<K extends keyof typeof form>(
+    key: K,
+    value: (typeof form)[K],
+  ) {
     setForm((current) => ({ ...current, [key]: value }));
   }
 
@@ -44,25 +52,76 @@ export default function SignUpPage() {
       <div className="grid w-full gap-8 lg:grid-cols-[0.95fr_1.05fr]">
         <section className="flex flex-col justify-center">
           <p className="panel-title">Onboarding SaaS</p>
-          <h1 className="mt-4 text-5xl font-bold text-white">Criar workspace e entrar operando</h1>
+          <h1 className="mt-4 text-5xl font-bold text-white">
+            Criar workspace e entrar operando
+          </h1>
           <p className="mt-4 max-w-xl text-lg leading-8 text-slate-300">
-            Signup cria usuario, tenant, membership owner e assinatura inicial. O painel ja fica pronto para conectar o WhatsApp.
+            Signup cria usuario, tenant, membership owner e assinatura inicial.
+            O painel ja fica pronto para conectar o WhatsApp.
           </p>
         </section>
 
         <section className="panel p-8">
-          <form className="grid gap-4" onSubmit={onSubmit}>
-            <input className="input" placeholder="Seu nome" value={form.name} onChange={(e) => update("name", e.target.value)} required />
-            <input className="input" placeholder="Email" type="email" value={form.email} onChange={(e) => update("email", e.target.value)} required />
-            <input className="input" placeholder="Senha forte" type="password" value={form.password} onChange={(e) => update("password", e.target.value)} required />
-            <input className="input" placeholder="Nome do workspace" value={form.tenant_name} onChange={(e) => update("tenant_name", e.target.value)} required />
-            <select className="input" value={form.plan} onChange={(e) => update("plan", e.target.value)}>
+          <form
+            className="grid gap-4"
+            data-testid="signup-form"
+            onSubmit={onSubmit}
+          >
+            <input
+              className="input"
+              data-testid="signup-name"
+              placeholder="Seu nome"
+              value={form.name}
+              onChange={(e) => update("name", e.target.value)}
+              required
+            />
+            <input
+              className="input"
+              data-testid="signup-email"
+              placeholder="Email"
+              type="email"
+              value={form.email}
+              onChange={(e) => update("email", e.target.value)}
+              required
+            />
+            <input
+              className="input"
+              data-testid="signup-password"
+              placeholder="Senha forte"
+              type="password"
+              value={form.password}
+              onChange={(e) => update("password", e.target.value)}
+              required
+            />
+            <input
+              className="input"
+              data-testid="signup-tenant"
+              placeholder="Nome do workspace"
+              value={form.tenant_name}
+              onChange={(e) => update("tenant_name", e.target.value)}
+              required
+            />
+            <select
+              className="input"
+              data-testid="signup-plan"
+              value={form.plan}
+              onChange={(e) => update("plan", e.target.value)}
+            >
               <option value="starter">Starter</option>
               <option value="growth">Growth</option>
               <option value="pro">Pro</option>
             </select>
-            {error ? <p className="rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">{error}</p> : null}
-            <button className="button-primary w-full" disabled={loading} type="submit">
+            {error ? (
+              <p className="rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
+                {error}
+              </p>
+            ) : null}
+            <button
+              className="button-primary w-full"
+              data-testid="signup-submit"
+              disabled={loading}
+              type="submit"
+            >
               {loading ? "Criando..." : "Criar workspace"}
             </button>
           </form>

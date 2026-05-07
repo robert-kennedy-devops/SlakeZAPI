@@ -27,6 +27,7 @@ export interface TenantUser {
 export interface UserSessionResponse {
   token: string;
   expires_at: string;
+  refresh_expires_at: string;
   user: User;
   tenant: Tenant;
   membership: TenantUser;
@@ -37,6 +38,17 @@ export interface CurrentUserResponse {
   tenant: Tenant;
   membership: TenantUser;
   memberships: TenantUser[];
+}
+
+export interface TenantMember {
+  id: string;
+  tenant_id: string;
+  user_id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  active: boolean;
+  created_at: string;
 }
 
 export interface Usage {

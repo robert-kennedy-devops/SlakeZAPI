@@ -1,4 +1,4 @@
-.PHONY: run build docker-up docker-down migrate lint tidy web-dev web-build
+.PHONY: run build docker-up docker-down migrate lint tidy web-dev web-build web-e2e
 
 # ── Local dev ──────────────────────────────────────────────
 run:
@@ -15,6 +15,9 @@ web-dev:
 
 web-build:
 	cd web && npm run build
+
+web-e2e:
+	cd web && npm run test:e2e
 
 lint:
 	go vet ./...

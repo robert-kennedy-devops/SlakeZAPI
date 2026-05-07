@@ -67,7 +67,10 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 
 	// ── Use Cases ───────────────────────────────────────────────────────────
 	authUC := usecase.NewAuthUsecase(apiKeyRepo, tenantRepo, subRepo, billingSvc, waMgr, cfg.APIKeySalt, log)
-	userAuthUC := usecase.NewUserAuthUsecase(userRepo, tenantRepo, tenantUserRepo, userSessionRepo, subRepo, log)
+	userAuthUC := usecase.NewUserAuthUsecase(
+		userRepo, tenantRepo, tenantUserRepo, userSessionRepo, subRepo,
+		cfg.UserAccessTokenTTL, cfg.UserRefreshTokenTTL, log,
+	)
 	msgUC := usecase.NewMessageUsecase(msgRepo, waMgr, billingSvc, eventBus, log)
 	waUC := usecase.NewWhatsAppUsecase(waMgr, eventBus, log)
 	webhookUC := usecase.NewWebhookUsecase(webhookRepo, subRepo, log)
@@ -87,7 +90,8 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 	router := transportHTTP.NewRouter(
 		db, workerPool,
 		authUC, userAuthUC, msgUC, waUC, webhookUC, billingUC,
-		hub, metrics, startedAt, cfg.RateLimitRPS, cfg.CORSAllowedOrigins, log,
+		hub, metrics, startedAt, cfg.RateLimitRPS, cfg.CORSAllowedOrigins,
+		cfg.UserSessionCookieName, cfg.UserSessionCookieSecure, cfg.UserSessionCookieDomain, cfg.UserSessionCookieSameSite, log,
 	)
 
 	server := &http.Server{

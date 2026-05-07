@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -85,7 +86,7 @@ func TestRouterBootstrapAndSendMessageFlow(t *testing.T) {
 			APIKey string `json:"api_key"`
 		} `json:"api_key"`
 	}{}
-	requestJSON(t, server, http.MethodPost, "/auth/bootstrap", "", map[string]string{
+	requestJSON(t, server, nil, http.MethodPost, "/auth/bootstrap", "", map[string]string{
 		"name":  "Tenant HTTP",
 		"email": "http@example.com",
 		"plan":  "growth",
@@ -98,7 +99,7 @@ func TestRouterBootstrapAndSendMessageFlow(t *testing.T) {
 		Tenant *domain.Tenant `json:"tenant"`
 		Usage  *domain.Usage  `json:"usage"`
 	}{}
-	requestJSON(t, server, http.MethodGet, "/auth/me", bootstrapResp.APIKey.APIKey, nil, http.StatusOK, &meResp)
+	requestJSON(t, server, nil, http.MethodGet, "/auth/me", bootstrapResp.APIKey.APIKey, nil, http.StatusOK, &meResp)
 	if meResp.Tenant == nil || meResp.Tenant.Email != "http@example.com" {
 		t.Fatalf("unexpected /auth/me response: %+v", meResp)
 	}
@@ -107,7 +108,7 @@ func TestRouterBootstrapAndSendMessageFlow(t *testing.T) {
 		MessageID string `json:"message_id"`
 		Status    string `json:"status"`
 	}{}
-	requestJSON(t, server, http.MethodPost, "/messages/send", bootstrapResp.APIKey.APIKey, map[string]string{
+	requestJSON(t, server, nil, http.MethodPost, "/messages/send", bootstrapResp.APIKey.APIKey, map[string]string{
 		"phone":   "5511999999999",
 		"message": "hello integration",
 	}, http.StatusOK, &sendResp)
@@ -116,7 +117,7 @@ func TestRouterBootstrapAndSendMessageFlow(t *testing.T) {
 	}
 
 	listResp := make([]domain.Message, 0)
-	requestJSON(t, server, http.MethodGet, "/messages", bootstrapResp.APIKey.APIKey, nil, http.StatusOK, &listResp)
+	requestJSON(t, server, nil, http.MethodGet, "/messages", bootstrapResp.APIKey.APIKey, nil, http.StatusOK, &listResp)
 	if len(listResp) != 1 {
 		t.Fatalf("expected one message, got %d", len(listResp))
 	}
@@ -135,7 +136,7 @@ func TestRouterDownloadsInboundMedia(t *testing.T) {
 			APIKey string `json:"api_key"`
 		} `json:"api_key"`
 	}{}
-	requestJSON(t, server, http.MethodPost, "/auth/bootstrap", "", map[string]string{
+	requestJSON(t, server, nil, http.MethodPost, "/auth/bootstrap", "", map[string]string{
 		"name":  "Tenant Media",
 		"email": "media@example.com",
 		"plan":  "growth",
@@ -189,9 +190,13 @@ func TestRouterDownloadsInboundMedia(t *testing.T) {
 func TestRouterUserAuthSignUpLoginAndMe(t *testing.T) {
 	db := testutil.OpenTestDB(t)
 	server := newIntegrationServer(t, db)
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("new cookie jar: %v", err)
+	}
 
 	signUpResp := domain.AuthSessionResponse{}
-	requestJSON(t, server, http.MethodPost, "/app/auth/signup", "", map[string]string{
+	signUpRec := requestJSON(t, server, jar, http.MethodPost, "/app/auth/signup", "", map[string]string{
 		"name":        "Owner App",
 		"email":       "owner@app.example",
 		"password":    "supersecret123",
@@ -201,18 +206,21 @@ func TestRouterUserAuthSignUpLoginAndMe(t *testing.T) {
 	if signUpResp.Token == "" || signUpResp.User == nil || signUpResp.Tenant == nil || signUpResp.Membership == nil {
 		t.Fatalf("unexpected signup response: %+v", signUpResp)
 	}
+	if len(signUpRec.Result().Cookies()) == 0 {
+		t.Fatal("expected refresh cookie on signup")
+	}
 	if signUpResp.Membership.Role != domain.UserRoleOwner {
 		t.Fatalf("expected owner role, got %+v", signUpResp.Membership)
 	}
 
 	meResp := domain.CurrentUserResponse{}
-	requestJSON(t, server, http.MethodGet, "/app/auth/me", signUpResp.Token, nil, http.StatusOK, &meResp)
+	requestJSON(t, server, jar, http.MethodGet, "/app/auth/me", signUpResp.Token, nil, http.StatusOK, &meResp)
 	if meResp.User == nil || meResp.User.Email != "owner@app.example" {
 		t.Fatalf("unexpected /app/auth/me response: %+v", meResp)
 	}
 
 	loginResp := domain.AuthSessionResponse{}
-	requestJSON(t, server, http.MethodPost, "/app/auth/login", "", map[string]string{
+	requestJSON(t, server, jar, http.MethodPost, "/app/auth/login", "", map[string]string{
 		"email":    "owner@app.example",
 		"password": "supersecret123",
 	}, http.StatusOK, &loginResp)
@@ -221,11 +229,19 @@ func TestRouterUserAuthSignUpLoginAndMe(t *testing.T) {
 	}
 
 	summaryResp := domain.TenantSummary{}
-	requestJSONWithHeaders(t, server, http.MethodGet, "/app/tenant/summary", signUpResp.Token, nil, http.StatusOK, &summaryResp, map[string]string{
+	requestJSONWithHeaders(t, server, jar, http.MethodGet, "/app/tenant/summary", signUpResp.Token, nil, http.StatusOK, &summaryResp, map[string]string{
 		"X-Tenant-ID": signUpResp.Tenant.ID,
 	})
 	if summaryResp.Tenant == nil || summaryResp.Tenant.ID != signUpResp.Tenant.ID {
 		t.Fatalf("unexpected tenant summary: %+v", summaryResp)
+	}
+
+	refreshResp := domain.AuthSessionResponse{}
+	requestJSONWithHeaders(t, server, jar, http.MethodPost, "/app/auth/refresh", "", nil, http.StatusOK, &refreshResp, map[string]string{
+		"X-Tenant-ID": signUpResp.Tenant.ID,
+	})
+	if refreshResp.Token == "" || refreshResp.RefreshExpiresAt.IsZero() {
+		t.Fatalf("unexpected refresh response: %+v", refreshResp)
 	}
 }
 
@@ -234,7 +250,7 @@ func TestRouterAppRoutesRespectUserRole(t *testing.T) {
 	server := newIntegrationServer(t, db)
 
 	signUpResp := domain.AuthSessionResponse{}
-	requestJSON(t, server, http.MethodPost, "/app/auth/signup", "", map[string]string{
+	requestJSON(t, server, nil, http.MethodPost, "/app/auth/signup", "", map[string]string{
 		"name":        "Viewer App",
 		"email":       "viewer@app.example",
 		"password":    "supersecret123",
@@ -246,7 +262,7 @@ func TestRouterAppRoutesRespectUserRole(t *testing.T) {
 		t.Fatalf("downgrade membership role: %v", err)
 	}
 
-	requestJSONWithHeaders(t, server, http.MethodGet, "/app/messages", signUpResp.Token, nil, http.StatusOK, &[]domain.Message{}, map[string]string{
+	requestJSONWithHeaders(t, server, nil, http.MethodGet, "/app/messages", signUpResp.Token, nil, http.StatusOK, &[]domain.Message{}, map[string]string{
 		"X-Tenant-ID": signUpResp.Tenant.ID,
 	})
 
@@ -259,6 +275,58 @@ func TestRouterAppRoutesRespectUserRole(t *testing.T) {
 
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("expected 403 for viewer send, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRouterAppMemberManagementFlow(t *testing.T) {
+	db := testutil.OpenTestDB(t)
+	server := newIntegrationServer(t, db)
+
+	ownerResp := domain.AuthSessionResponse{}
+	requestJSON(t, server, nil, http.MethodPost, "/app/auth/signup", "", map[string]string{
+		"name":        "Owner Team",
+		"email":       "owner.team@app.example",
+		"password":    "supersecret123",
+		"tenant_name": "Workspace Team",
+		"plan":        "growth",
+	}, http.StatusCreated, &ownerResp)
+
+	memberResp := domain.AuthSessionResponse{}
+	requestJSON(t, server, nil, http.MethodPost, "/app/auth/signup", "", map[string]string{
+		"name":        "Second User",
+		"email":       "second.user@app.example",
+		"password":    "supersecret123",
+		"tenant_name": "Workspace Side",
+		"plan":        "starter",
+	}, http.StatusCreated, &memberResp)
+
+	var addedMember domain.TenantMember
+	requestJSONWithHeaders(t, server, nil, http.MethodPost, "/app/members", ownerResp.Token, map[string]string{
+		"email": memberResp.User.Email,
+		"role":  "viewer",
+	}, http.StatusCreated, &addedMember, map[string]string{
+		"X-Tenant-ID": ownerResp.Tenant.ID,
+	})
+	if addedMember.Email != memberResp.User.Email || addedMember.Role != domain.UserRoleViewer {
+		t.Fatalf("unexpected added member: %+v", addedMember)
+	}
+
+	var listedMembers []domain.TenantMember
+	requestJSONWithHeaders(t, server, nil, http.MethodGet, "/app/members", ownerResp.Token, nil, http.StatusOK, &listedMembers, map[string]string{
+		"X-Tenant-ID": ownerResp.Tenant.ID,
+	})
+	if len(listedMembers) != 2 {
+		t.Fatalf("expected 2 members in tenant, got %d", len(listedMembers))
+	}
+
+	var updatedMember domain.TenantMember
+	requestJSONWithHeaders(t, server, nil, http.MethodPost, "/app/members/"+addedMember.ID+"/role", ownerResp.Token, map[string]string{
+		"role": "operator",
+	}, http.StatusOK, &updatedMember, map[string]string{
+		"X-Tenant-ID": ownerResp.Tenant.ID,
+	})
+	if updatedMember.Role != domain.UserRoleOperator {
+		t.Fatalf("expected operator role after update, got %+v", updatedMember)
 	}
 }
 
@@ -277,6 +345,9 @@ func TestRouterCORSPreflight(t *testing.T) {
 	}
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "http://localhost:3000" {
 		t.Fatalf("unexpected allow origin header: %q", got)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Credentials"); got != "true" {
+		t.Fatalf("unexpected allow credentials header: %q", got)
 	}
 }
 
@@ -310,7 +381,7 @@ func newIntegrationServer(t *testing.T, db *sql.DB) http.Handler {
 	}
 	billingSvc := billing.NewService(usageRepo, subRepo, log)
 	authUC := usecase.NewAuthUsecase(apiKeyRepo, tenantRepo, subRepo, billingSvc, waSvc, "test-salt", log)
-	userAuthUC := usecase.NewUserAuthUsecase(userRepo, tenantRepo, tenantUserRepo, userSessionRepo, subRepo, log)
+	userAuthUC := usecase.NewUserAuthUsecase(userRepo, tenantRepo, tenantUserRepo, userSessionRepo, subRepo, 15*time.Minute, 7*24*time.Hour, log)
 	msgUC := usecase.NewMessageUsecase(msgRepo, waSvc, billingSvc, eventBus, log)
 	waUC := usecase.NewWhatsAppUsecase(waSvc, eventBus, log)
 	webhookUC := usecase.NewWebhookUsecase(webhookRepo, subRepo, log)
@@ -331,16 +402,20 @@ func newIntegrationServer(t *testing.T, db *sql.DB) http.Handler {
 		time.Now().UTC(),
 		1000,
 		[]string{"http://localhost:3000"},
+		"slakezapi_rt_test",
+		false,
+		"",
+		"lax",
 		log,
 	)
 }
 
-func requestJSON(t *testing.T, handler http.Handler, method, path, apiKey string, body any, wantStatus int, out any) {
+func requestJSON(t *testing.T, handler http.Handler, jar *cookiejar.Jar, method, path, apiKey string, body any, wantStatus int, out any) *httptest.ResponseRecorder {
 	t.Helper()
-	requestJSONWithHeaders(t, handler, method, path, apiKey, body, wantStatus, out, nil)
+	return requestJSONWithHeaders(t, handler, jar, method, path, apiKey, body, wantStatus, out, nil)
 }
 
-func requestJSONWithHeaders(t *testing.T, handler http.Handler, method, path, apiKey string, body any, wantStatus int, out any, headers map[string]string) {
+func requestJSONWithHeaders(t *testing.T, handler http.Handler, jar *cookiejar.Jar, method, path, apiKey string, body any, wantStatus int, out any, headers map[string]string) *httptest.ResponseRecorder {
 	t.Helper()
 
 	var payload []byte
@@ -359,12 +434,26 @@ func requestJSONWithHeaders(t *testing.T, handler http.Handler, method, path, ap
 	if apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
+	if jar != nil {
+		u := *req.URL
+		u.Scheme = "http"
+		u.Host = "app.test"
+		for _, cookie := range jar.Cookies(&u) {
+			req.AddCookie(cookie)
+		}
+	}
 	for key, value := range headers {
 		req.Header.Set(key, value)
 	}
 
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
+	if jar != nil {
+		u := *req.URL
+		u.Scheme = "http"
+		u.Host = "app.test"
+		jar.SetCookies(&u, rec.Result().Cookies())
+	}
 
 	if rec.Code != wantStatus {
 		t.Fatalf("unexpected status for %s %s: got %d want %d body=%s", method, path, rec.Code, wantStatus, rec.Body.String())
@@ -374,4 +463,5 @@ func requestJSONWithHeaders(t *testing.T, handler http.Handler, method, path, ap
 			t.Fatalf("unmarshal response: %v body=%s", err, rec.Body.String())
 		}
 	}
+	return rec
 }

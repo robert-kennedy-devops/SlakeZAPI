@@ -43,13 +43,26 @@ type TenantUser struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type TenantMember struct {
+	ID        string    `json:"id"`
+	TenantID  string    `json:"tenant_id"`
+	UserID    string    `json:"user_id"`
+	Email     string    `json:"email"`
+	Name      string    `json:"name"`
+	Role      UserRole  `json:"role"`
+	Active    bool      `json:"active"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type UserSession struct {
-	ID         string    `json:"id"`
-	UserID     string    `json:"user_id"`
-	TokenHash  string    `json:"-"`
-	ExpiresAt  time.Time `json:"expires_at"`
-	CreatedAt  time.Time `json:"created_at"`
-	LastUsedAt time.Time `json:"last_used_at"`
+	ID               string    `json:"id"`
+	UserID           string    `json:"user_id"`
+	TokenHash        string    `json:"-"`
+	RefreshTokenHash string    `json:"-"`
+	ExpiresAt        time.Time `json:"expires_at"`
+	RefreshExpiresAt time.Time `json:"refresh_expires_at"`
+	CreatedAt        time.Time `json:"created_at"`
+	LastUsedAt       time.Time `json:"last_used_at"`
 }
 
 // ─── APIKey ─────────────────────────────────────────────────────────────────
@@ -304,11 +317,12 @@ type LoginRequest struct {
 }
 
 type AuthSessionResponse struct {
-	Token      string      `json:"token"`
-	ExpiresAt  time.Time   `json:"expires_at"`
-	User       *User       `json:"user"`
-	Tenant     *Tenant     `json:"tenant"`
-	Membership *TenantUser `json:"membership"`
+	Token            string      `json:"token"`
+	ExpiresAt        time.Time   `json:"expires_at"`
+	RefreshExpiresAt time.Time   `json:"refresh_expires_at"`
+	User             *User       `json:"user"`
+	Tenant           *Tenant     `json:"tenant"`
+	Membership       *TenantUser `json:"membership"`
 }
 
 type CurrentUserResponse struct {
@@ -316,4 +330,13 @@ type CurrentUserResponse struct {
 	Tenant      *Tenant      `json:"tenant"`
 	Membership  *TenantUser  `json:"membership"`
 	Memberships []TenantUser `json:"memberships,omitempty"`
+}
+
+type AddTenantMemberRequest struct {
+	Email string   `json:"email"`
+	Role  UserRole `json:"role"`
+}
+
+type UpdateTenantMemberRoleRequest struct {
+	Role UserRole `json:"role"`
 }

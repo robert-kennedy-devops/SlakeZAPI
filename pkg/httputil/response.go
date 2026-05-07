@@ -41,7 +41,7 @@ func DomainError(w http.ResponseWriter, err error) {
 		Error(w, http.StatusNotFound, err.Error())
 	case domain.ErrLimitExceeded:
 		Error(w, http.StatusPaymentRequired, err.Error())
-	case domain.ErrConflict:
+	case domain.ErrConflict, domain.ErrUserAlreadyInTenant:
 		Error(w, http.StatusConflict, err.Error())
 	case domain.ErrBadRequest, domain.ErrInvalidPhone, domain.ErrNoSubscription, domain.ErrMessageMediaAbsent:
 		Error(w, http.StatusBadRequest, err.Error())

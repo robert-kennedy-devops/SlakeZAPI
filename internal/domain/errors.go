@@ -17,8 +17,9 @@ var (
 	ErrTenantAccessDenied = errors.New("tenant access denied")
 
 	// Users
-	ErrUserNotFound = errors.New("user not found")
-	ErrUserInactive = errors.New("user is inactive")
+	ErrUserNotFound        = errors.New("user not found")
+	ErrUserInactive        = errors.New("user is inactive")
+	ErrUserAlreadyInTenant = errors.New("user is already a member of this tenant")
 
 	// Billing
 	ErrLimitExceeded  = errors.New("monthly message limit exceeded")

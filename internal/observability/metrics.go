@@ -14,6 +14,7 @@ type Metrics struct {
 	httpRequestsTotal   *prometheus.CounterVec
 	httpDurationSeconds *prometheus.HistogramVec
 	httpInflight        prometheus.Gauge
+	authEventsTotal     *prometheus.CounterVec
 	readiness           *prometheus.GaugeVec
 	queueDepth          *prometheus.GaugeVec
 }
@@ -46,6 +47,14 @@ func NewMetrics() *Metrics {
 				Help:      "Current number of inflight HTTP requests.",
 			},
 		),
+		authEventsTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: "slakezapi",
+				Name:      "auth_events_total",
+				Help:      "Authentication lifecycle events by action and outcome.",
+			},
+			[]string{"action", "outcome"},
+		),
 		readiness: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Namespace: "slakezapi",
@@ -68,10 +77,15 @@ func NewMetrics() *Metrics {
 		m.httpRequestsTotal,
 		m.httpDurationSeconds,
 		m.httpInflight,
+		m.authEventsTotal,
 		m.readiness,
 		m.queueDepth,
 	)
 	return m
+}
+
+func (m *Metrics) TrackAuth(action, outcome string) {
+	m.authEventsTotal.WithLabelValues(action, outcome).Inc()
 }
 
 func (m *Metrics) Handler() http.Handler {

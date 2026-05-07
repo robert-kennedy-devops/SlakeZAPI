@@ -1,6 +1,9 @@
 package domain
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // ─── Repository Interfaces ───────────────────────────────────────────────────
 
@@ -23,17 +26,22 @@ type UserRepository interface {
 // TenantUserRepository handles user membership in tenants.
 type TenantUserRepository interface {
 	Create(ctx context.Context, tenantUser *TenantUser) error
+	GetByID(ctx context.Context, id string) (*TenantUser, error)
 	GetByUserAndTenant(ctx context.Context, userID, tenantID string) (*TenantUser, error)
 	ListByUser(ctx context.Context, userID string) ([]TenantUser, error)
+	ListByTenant(ctx context.Context, tenantID string) ([]TenantMember, error)
+	UpdateRole(ctx context.Context, id string, role UserRole) error
 }
 
 // UserSessionRepository handles authenticated user sessions.
 type UserSessionRepository interface {
 	Create(ctx context.Context, session *UserSession) error
 	GetByHash(ctx context.Context, tokenHash string) (*UserSession, error)
+	GetByRefreshHash(ctx context.Context, refreshHash string) (*UserSession, error)
 	DeleteByID(ctx context.Context, id string) error
 	DeleteByUser(ctx context.Context, userID string) error
-	UpdateLastUsed(ctx context.Context, id string) error
+	Touch(ctx context.Context, id string, accessExpiresAt time.Time) error
+	RotateTokens(ctx context.Context, id, accessHash, refreshHash string, accessExpiresAt, refreshExpiresAt time.Time) error
 }
 
 // APIKeyRepository handles API key persistence.

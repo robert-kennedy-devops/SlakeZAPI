@@ -30,11 +30,23 @@ func NewRouter(
 	startedAt time.Time,
 	rateRPS int,
 	corsAllowedOrigins []string,
+	userSessionCookieName string,
+	userSessionCookieSecure bool,
+	userSessionCookieDomain string,
+	userSessionCookieSameSite string,
 	log *logger.Logger,
 ) http.Handler {
 	// ── Handlers ────────────────────────────────────────────────────────────
 	authH := handler.NewAuthHandler(authUC, log)
-	userAuthH := handler.NewUserAuthHandler(userAuthUC, log)
+	userAuthH := handler.NewUserAuthHandler(
+		userAuthUC,
+		metrics,
+		userSessionCookieName,
+		userSessionCookieSecure,
+		userSessionCookieDomain,
+		userSessionCookieSameSite,
+		log,
+	)
 	msgH := handler.NewMessageHandler(msgUC, log)
 	waH := handler.NewWhatsAppHandler(waUC, log)
 	hookH := handler.NewWebhookHandler(hookUC, billingUC, log)
@@ -66,9 +78,13 @@ func NewRouter(
 	mux.HandleFunc("POST /auth/bootstrap", authH.Bootstrap)
 	mux.HandleFunc("POST /app/auth/signup", userAuthH.SignUp)
 	mux.HandleFunc("POST /app/auth/login", userAuthH.Login)
+	mux.HandleFunc("POST /app/auth/refresh", userAuthH.Refresh)
 	mux.Handle("POST /app/auth/logout", withUserAuth(userAuthH.Logout))
 	mux.Handle("GET /app/auth/me", withUserAuth(userAuthH.Me))
 	mux.Handle("GET /app/tenant/summary", withUserRole(authH.Me, domain.UserRoleOwner, domain.UserRoleAdmin, domain.UserRoleOperator, domain.UserRoleViewer))
+	mux.Handle("GET /app/members", withUserRole(userAuthH.ListMembers, domain.UserRoleOwner, domain.UserRoleAdmin, domain.UserRoleOperator, domain.UserRoleViewer))
+	mux.Handle("POST /app/members", withUserRole(userAuthH.AddMember, domain.UserRoleOwner, domain.UserRoleAdmin))
+	mux.Handle("POST /app/members/{id}/role", withUserRole(userAuthH.UpdateMemberRole, domain.UserRoleOwner, domain.UserRoleAdmin))
 
 	// App dashboard routes (user session based)
 	mux.Handle("GET /app/apikeys", withUserRole(authH.ListAPIKeys, domain.UserRoleOwner, domain.UserRoleAdmin))

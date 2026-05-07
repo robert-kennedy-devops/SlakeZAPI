@@ -121,9 +121,11 @@ O painel web usa login de usuário em `/app/auth/*`, seleção de tenant por hea
 
 - login: `POST /app/auth/login`
 - signup: `POST /app/auth/signup`
+- refresh: `POST /app/auth/refresh`
 - perfil/sessão: `GET /app/auth/me`
 - dashboard summary: `GET /app/tenant/summary`
 - mensagens, webhooks, credenciais e sessão WhatsApp via `/app/*`
+- para frontend e API em subdomínios diferentes, use cookie `SameSite=None` + `Secure`
 
 ---
 
@@ -158,6 +160,7 @@ O painel web usa login de usuário em `/app/auth/*`, seleção de tenant por hea
 | `GET` | `/ws` | WebSocket — eventos em tempo real |
 | `POST` | `/app/auth/signup` | Criar usuário, tenant owner e sessão do app |
 | `POST` | `/app/auth/login` | Autenticar usuário do dashboard |
+| `POST` | `/app/auth/refresh` | Renovar access token usando refresh cookie |
 | `GET` | `/app/auth/me` | Consultar usuário atual e memberships |
 | `GET` | `/app/tenant/summary` | Resumo do tenant selecionado |
 | `GET` | `/app/messages` | Listar mensagens usando sessão de usuário |
@@ -418,6 +421,12 @@ Fluxo operacional:
 | `RATE_LIMIT_RPS` | `10` | Requisições/segundo por tenant |
 | `SHUTDOWN_TIMEOUT` | `10s` | Timeout para graceful shutdown |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:3000` | Origins permitidas para o frontend |
+| `USER_ACCESS_TOKEN_TTL` | `15m` | Duração do access token do dashboard |
+| `USER_REFRESH_TOKEN_TTL` | `168h` | Duração do refresh token rotativo |
+| `USER_SESSION_COOKIE_NAME` | `slakezapi_rt` | Nome do cookie `HttpOnly` da sessão web |
+| `USER_SESSION_COOKIE_SECURE` | `false` | Use `true` em produção com HTTPS |
+| `USER_SESSION_COOKIE_DOMAIN` | vazio | Domínio compartilhado do cookie, ex: `.example.com` |
+| `USER_SESSION_COOKIE_SAMESITE` | `lax` | `lax`, `strict` ou `none` |
 | `NEXT_PUBLIC_API_URL` | `http://localhost:8080` | Base URL usada pelo frontend Next.js |
 
 ---
@@ -427,6 +436,8 @@ Fluxo operacional:
 ```bash
 go test ./...
 cd web && npm run build
+cd web && npx playwright install --with-deps chromium
+cd web && npm run test:e2e
 ```
 
 ---
@@ -445,8 +456,17 @@ Fluxo principal:
 
 - `/signup` cria usuário + workspace
 - `/login` autentica a sessão do app
+- o app renova sessão automaticamente com refresh cookie `HttpOnly`
+- para setup cross-domain, configure `USER_SESSION_COOKIE_DOMAIN=.seu-dominio.com`, `USER_SESSION_COOKIE_SAMESITE=none` e HTTPS
 - `/dashboard` consome as rotas `/app/*`
 - realtime chega por `/app/ws`
+
+Observabilidade:
+
+- métricas HTTP em `/metrics`
+- métricas de autenticação do dashboard em `slakezapi_auth_events_total{action,outcome}`
+
+CI disponível em `.github/workflows/ci.yml` com validação de Go, build do frontend, Playwright e build das imagens Docker.
 
 Com isso, a API continua apta para integrações via API key e o produto ganha uma camada SaaS pronta para operação humana.
 
