@@ -544,6 +544,14 @@ func (u *MessageUsecase) ListGroups(ctx context.Context, tenantID, requestedInst
 	return u.whatsapp.ListGroups(ctx, tenantID, instanceID)
 }
 
+func (u *MessageUsecase) ListContacts(ctx context.Context, tenantID, requestedInstanceID string) ([]domain.WAContact, error) {
+	instanceID, err := u.resolveInstanceID(ctx, tenantID, requestedInstanceID)
+	if err != nil {
+		return nil, err
+	}
+	return u.whatsapp.ListContacts(ctx, tenantID, instanceID)
+}
+
 func (u *MessageUsecase) resolveSingleRecipient(ctx context.Context, tenantID, instanceID, rawPhone string) (string, error) {
 	normalized, err := normalizePhone(rawPhone)
 	if err != nil {

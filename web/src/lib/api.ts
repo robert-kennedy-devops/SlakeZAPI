@@ -7,6 +7,7 @@ import type {
   CurrentUserResponse,
   Campaign,
   Group,
+  WAContact,
   Instance,
   Message,
   BulkSendMessageResponse,
@@ -295,6 +296,8 @@ export const api = {
     }),
   groups: (token: string, tenantID: string, instanceID?: string) =>
     request<Group[]>("/app/groups", { token, tenantID, instanceID }),
+  waContacts: (token: string, tenantID: string, instanceID?: string) =>
+    request<WAContact[]>("/app/contacts", { token, tenantID, instanceID }),
   resolveContacts: (
     token: string,
     tenantID: string,

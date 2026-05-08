@@ -157,6 +157,20 @@ func (h *MessageHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
 	httputil.JSON(w, http.StatusOK, resp)
 }
 
+func (h *MessageHandler) ListContacts(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.TenantFromCtx(r.Context())
+	if tenantID == "" {
+		httputil.Error(w, http.StatusUnauthorized, "missing tenant context")
+		return
+	}
+	resp, err := h.msgUC.ListContacts(r.Context(), tenantID, middleware.InstanceFromCtx(r.Context()))
+	if err != nil {
+		httputil.DomainError(w, err)
+		return
+	}
+	httputil.JSON(w, http.StatusOK, resp)
+}
+
 func (h *MessageHandler) ResolveContacts(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.TenantFromCtx(r.Context())
 	if tenantID == "" {

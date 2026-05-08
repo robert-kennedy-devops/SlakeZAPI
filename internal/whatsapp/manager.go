@@ -363,14 +363,45 @@ func (m *Manager) ListGroups(ctx context.Context, tenantID, instanceID string) (
 	}
 	result := make([]domain.Group, 0, len(groups))
 	for _, item := range groups {
+		count := item.ParticipantCount
+		if count == 0 {
+			count = len(item.Participants)
+		}
 		result = append(result, domain.Group{
 			JID:              item.JID.String(),
 			Name:             item.Name,
 			Topic:            item.Topic,
-			ParticipantCount: item.ParticipantCount,
+			ParticipantCount: count,
 			IsAnnounce:       item.IsAnnounce,
 			IsLocked:         item.IsLocked,
 			CreatedAt:        item.GroupCreated,
+		})
+	}
+	return result, nil
+}
+
+func (m *Manager) ListContacts(ctx context.Context, tenantID, instanceID string) ([]domain.WAContact, error) {
+	sess, err := m.ensureSession(ctx, tenantID, instanceID)
+	if err != nil {
+		return nil, err
+	}
+	if !sess.client.IsConnected() {
+		return nil, domain.ErrSessionNotConnected
+	}
+	all, err := sess.client.Store.Contacts.GetAllContacts(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list contacts: %w", err)
+	}
+	result := make([]domain.WAContact, 0, len(all))
+	for jid, info := range all {
+		if jid.Server != "s.whatsapp.net" {
+			continue
+		}
+		result = append(result, domain.WAContact{
+			Phone:        jid.User,
+			FullName:     info.FullName,
+			PushName:     info.PushName,
+			BusinessName: info.BusinessName,
 		})
 	}
 	return result, nil

@@ -131,6 +131,7 @@ type WhatsAppService interface {
 	SendGroupMessage(ctx context.Context, tenantID, instanceID string, req GroupMessageRequest) (string, error)
 	PostStatus(ctx context.Context, tenantID, instanceID string, req StatusMessageRequest) (string, error)
 	ListGroups(ctx context.Context, tenantID, instanceID string) ([]Group, error)
+	ListContacts(ctx context.Context, tenantID, instanceID string) ([]WAContact, error)
 	ResolveContacts(ctx context.Context, tenantID, instanceID string, phones []string) ([]ResolvedContact, error)
 	DownloadMedia(ctx context.Context, tenantID, instanceID string, msg *Message) (*MediaDownload, error)
 	GetSession(ctx context.Context, tenantID, instanceID string) (*Session, error)

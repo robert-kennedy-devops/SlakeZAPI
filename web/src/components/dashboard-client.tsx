@@ -52,6 +52,7 @@ import {
 import type {
   AppEvent,
   ResolvedContact,
+  WAContact,
   CurrentUserResponse,
   Message,
   TenantMember,
@@ -97,7 +98,7 @@ const ROLE_LABELS: Record<UserRole, string> = {
   viewer: "Viewer",
 };
 
-const PHONE_PATTERN = /(?:\+?\d[\d\s().-]{7,}\d)/g;
+const PHONE_PATTERN = /(?:\+?\d[\d \t().-]{7,}\d)/g;
 
 export function DashboardClient() {
   const router = useRouter();
@@ -132,7 +133,9 @@ export function DashboardClient() {
     pollOptionsText: "Sim\nNao",
     maxSelect: 1,
   });
-  const [groupForm, setGroupForm] = useState({ groupJID: "", message: "" });
+  const [groupMessage, setGroupMessage] = useState("");
+  const [selectedGroupJIDs, setSelectedGroupJIDs] = useState<string[]>([]);
+  const [groupSearch, setGroupSearch] = useState("");
   const [statusForm, setStatusForm] = useState({
     type: "text",
     message: "",
@@ -373,13 +376,24 @@ export function DashboardClient() {
 
   const sendGroup = useMutation({
     mutationFn: () =>
-      api.sendGroupMessage(token, tenantHeader, instanceHeader, {
-        group_jid: groupForm.groupJID,
-        message: groupForm.message,
-      }),
-    onSuccess: () => {
-      setGroupForm({ groupJID: "", message: "" });
-      notify("Mensagem de grupo enviada.");
+      Promise.allSettled(
+        selectedGroupJIDs.map((jid) =>
+          api.sendGroupMessage(token, tenantHeader, instanceHeader, {
+            group_jid: jid,
+            message: groupMessage,
+          }),
+        ),
+      ),
+    onSuccess: (results) => {
+      const ok = results.filter((r) => r.status === "fulfilled").length;
+      const fail = results.length - ok;
+      setSelectedGroupJIDs([]);
+      setGroupMessage("");
+      notify(
+        fail === 0
+          ? `Mensagem enviada para ${ok} grupo${ok !== 1 ? "s" : ""}.`
+          : `${ok} enviado${ok !== 1 ? "s" : ""}, ${fail} falhou.`,
+      );
       invalidateTenant(tenantHeader, instanceHeader, queryClient);
     },
     onError: handleMutationError,
@@ -397,6 +411,20 @@ export function DashboardClient() {
       setStatusForm({ type: "text", message: "", url: "", caption: "" });
       notify("Status publicado.");
       invalidateTenant(tenantHeader, instanceHeader, queryClient);
+    },
+    onError: handleMutationError,
+  });
+
+  const importWAContacts = useMutation({
+    mutationFn: () => api.waContacts(token, tenantHeader, instanceHeader),
+    onSuccess: (contacts: WAContact[]) => {
+      if (!contacts.length) {
+        notify("Nenhum contato encontrado no cache do WhatsApp.");
+        return;
+      }
+      const phones = contacts.map((c) => c.phone).join("\n");
+      setContactInput(phones);
+      notify(`${contacts.length} contatos importados do WhatsApp.`);
     },
     onError: handleMutationError,
   });
@@ -919,6 +947,7 @@ export function DashboardClient() {
                     <div className="h-3 rounded-full bg-white/10">
                       <div
                         className="h-3 rounded-full bg-gradient-to-r from-glow to-neon"
+                        // eslint-disable-next-line no-inline-styles
                         style={{ width: `${usagePercent}%` }}
                       />
                     </div>
@@ -1271,61 +1300,98 @@ export function DashboardClient() {
                 action={
                   <button
                     className="button-primary"
-                    disabled={sendGroup.isPending || !groupForm.groupJID || !groupForm.message.trim()}
+                    disabled={
+                      sendGroup.isPending ||
+                      selectedGroupJIDs.length === 0 ||
+                      !groupMessage.trim()
+                    }
                     onClick={() => sendGroup.mutate()}
                     type="button"
                   >
-                    Enviar ao grupo
+                    {sendGroup.isPending
+                      ? "Enviando..."
+                      : `Enviar${selectedGroupJIDs.length > 1 ? ` (${selectedGroupJIDs.length})` : ""}`}
                   </button>
                 }
               >
-                <select
-                  className="input"
-                  value={groupForm.groupJID}
-                  onChange={(event) =>
-                    setGroupForm((current) => ({
-                      ...current,
-                      groupJID: event.target.value,
-                    }))
-                  }
-                >
-                  <option value="">Selecione um grupo</option>
-                  {groupsQuery.data?.map((group) => (
-                    <option key={group.jid} value={group.jid}>
-                      {group.name} • {group.participant_count} membros
-                    </option>
-                  ))}
-                </select>
                 <textarea
                   className="input min-h-24 py-3"
-                  placeholder="Mensagem para o grupo"
-                  value={groupForm.message}
-                  onChange={(event) =>
-                    setGroupForm((current) => ({
-                      ...current,
-                      message: event.target.value,
-                    }))
-                  }
+                  placeholder="Mensagem para o(s) grupo(s)"
+                  value={groupMessage}
+                  onChange={(event) => setGroupMessage(event.target.value)}
                 />
-                <div className="space-y-2">
-                  {groupsQuery.data?.slice(0, 5).map((group) => (
-                    <button
-                      key={group.jid}
-                      className="flex w-full items-start justify-between gap-3 rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-left text-sm text-slate-300"
-                      onClick={() =>
-                        setGroupForm((current) => ({
-                          ...current,
-                          groupJID: group.jid,
-                        }))
-                      }
-                      type="button"
-                    >
-                      <span className="min-w-0 flex-1 break-words">{group.name}</span>
-                      <span className="shrink-0 text-right text-xs text-slate-500">
-                        {group.participant_count} membros
-                      </span>
-                    </button>
-                  ))}
+                <div className="space-y-1.5">
+                  <input
+                    className="input w-full"
+                    placeholder="Buscar grupo..."
+                    value={groupSearch}
+                    onChange={(e) => setGroupSearch(e.target.value)}
+                  />
+                  <div className="flex items-center justify-between px-1 text-xs text-slate-500">
+                    <span>
+                      {groupsQuery.data
+                        ? `${groupsQuery.data.filter((g) => g.name.toLowerCase().includes(groupSearch.toLowerCase())).length} grupo(s)`
+                        : "—"}
+                    </span>
+                    {selectedGroupJIDs.length > 0 && (
+                      <button
+                        type="button"
+                        className="text-indigo-400 hover:text-white transition-colors"
+                        onClick={() => setSelectedGroupJIDs([])}
+                      >
+                        {selectedGroupJIDs.length} selecionado{selectedGroupJIDs.length !== 1 ? "s" : ""} · Limpar
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="max-h-80 space-y-1.5 overflow-y-auto pr-1">
+                  {groupsQuery.data
+                    ?.filter((g) =>
+                      g.name
+                        .toLowerCase()
+                        .includes(groupSearch.toLowerCase()),
+                    )
+                    .map((group) => {
+                      const selected = selectedGroupJIDs.includes(group.jid);
+                      return (
+                        <button
+                          key={group.jid}
+                          type="button"
+                          className={`flex w-full items-start gap-3 rounded-xl border px-3 py-2.5 text-left text-sm transition-colors ${
+                            selected
+                              ? "border-indigo-500/50 bg-indigo-900/25 text-white"
+                              : "border-white/8 bg-slate-950/40 text-slate-300 hover:border-white/20 hover:bg-slate-900/60"
+                          }`}
+                          onClick={() =>
+                            setSelectedGroupJIDs((current) =>
+                              current.includes(group.jid)
+                                ? current.filter((j) => j !== group.jid)
+                                : [...current, group.jid],
+                            )
+                          }
+                        >
+                          <span
+                            className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border text-xs font-bold transition-colors ${
+                              selected
+                                ? "border-indigo-400 bg-indigo-500 text-white"
+                                : "border-slate-600 bg-transparent text-transparent"
+                            }`}
+                          >
+                            ✓
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate leading-snug">
+                              {group.name}
+                            </span>
+                            <span className="mt-0.5 block text-xs text-slate-500">
+                              {group.participant_count > 0
+                                ? `${group.participant_count} membros`
+                                : "—"}
+                            </span>
+                          </span>
+                        </button>
+                      );
+                    })}
                   {groupsQuery.isLoading ? (
                     <EmptyState label="Carregando grupos da instancia..." />
                   ) : null}
@@ -1355,6 +1421,17 @@ export function DashboardClient() {
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    disabled={importWAContacts.isPending}
+                    onClick={() => importWAContacts.mutate()}
+                    title="Importa os contatos salvos no cache local do WhatsApp"
+                  >
+                    {importWAContacts.isPending
+                      ? "Importando..."
+                      : "Importar do WhatsApp"}
+                  </button>
                   <label
                     className="button-secondary cursor-pointer"
                     htmlFor={csvInputID}

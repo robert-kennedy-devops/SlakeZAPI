@@ -242,6 +242,13 @@ type Group struct {
 	CreatedAt        time.Time `json:"created_at"`
 }
 
+type WAContact struct {
+	Phone        string `json:"phone"`
+	FullName     string `json:"full_name,omitempty"`
+	PushName     string `json:"push_name,omitempty"`
+	BusinessName string `json:"business_name,omitempty"`
+}
+
 // ─── Webhook ─────────────────────────────────────────────────────────────────
 
 type Webhook struct {

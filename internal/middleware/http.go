@@ -86,6 +86,7 @@ func (rw *responseWriter) WriteHeader(code int) {
 type bucket struct {
 	mu       sync.Mutex
 	tokens   float64
+	burst    float64
 	last     time.Time
 	lastUsed time.Time
 	rps      float64
@@ -101,8 +102,8 @@ func (b *bucket) allow() bool {
 	b.lastUsed = now
 
 	b.tokens += elapsed * b.rps
-	if b.tokens > b.rps {
-		b.tokens = b.rps
+	if b.tokens > b.burst {
+		b.tokens = b.burst
 	}
 	if b.tokens >= 1 {
 		b.tokens--
@@ -113,7 +114,8 @@ func (b *bucket) allow() bool {
 
 // newLimiter returns a bucket map with a background cleanup goroutine that
 // evicts entries idle for more than 10 minutes, preventing unbounded growth.
-func newLimiter(rps float64) (getBucket func(string) *bucket, stop func()) {
+// burst sets the maximum token accumulation; must be >= 1 to allow any requests.
+func newLimiter(rps, burst float64) (getBucket func(string) *bucket, stop func()) {
 	var mu sync.Mutex
 	buckets := make(map[string]*bucket)
 
@@ -123,7 +125,7 @@ func newLimiter(rps float64) (getBucket func(string) *bucket, stop func()) {
 		if b, ok := buckets[key]; ok {
 			return b
 		}
-		b := &bucket{tokens: rps, last: time.Now(), lastUsed: time.Now(), rps: rps}
+		b := &bucket{tokens: burst, burst: burst, last: time.Now(), lastUsed: time.Now(), rps: rps}
 		buckets[key] = b
 		return b
 	}
@@ -157,7 +159,7 @@ func newLimiter(rps float64) (getBucket func(string) *bucket, stop func()) {
 // RateLimit limits requests per second per tenant (identified via context).
 // Falls back to client IP if no tenant is present.
 func RateLimit(rps int) func(http.Handler) http.Handler {
-	getBucket, _ := newLimiter(float64(rps))
+	getBucket, _ := newLimiter(float64(rps), float64(rps))
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -178,7 +180,7 @@ func RateLimit(rps int) func(http.Handler) http.Handler {
 // Intended for unauthenticated endpoints (login, signup, refresh).
 func IPRateLimit(rpm int) func(http.Handler) http.Handler {
 	rps := float64(rpm) / 60.0
-	getBucket, _ := newLimiter(rps)
+	getBucket, _ := newLimiter(rps, 5)
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

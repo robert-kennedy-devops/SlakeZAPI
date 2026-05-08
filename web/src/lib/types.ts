@@ -170,6 +170,13 @@ export interface Group {
   created_at: string;
 }
 
+export interface WAContact {
+  phone: string;
+  full_name?: string;
+  push_name?: string;
+  business_name?: string;
+}
+
 export interface Webhook {
   id: string;
   tenant_id: string;
