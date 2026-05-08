@@ -83,6 +83,7 @@ type APIKey struct {
 type PlanName string
 
 const (
+	PlanTrial   PlanName = "trial"
 	PlanStarter PlanName = "starter"
 	PlanGrowth  PlanName = "growth"
 	PlanPro     PlanName = "pro"
@@ -92,16 +93,17 @@ type Plan struct {
 	ID             string   `json:"id"`
 	Name           PlanName `json:"name"`
 	MonthlyLimit   int64    `json:"monthly_limit"`   // max messages per month
-	PriceUSDCents  int64    `json:"price_usd_cents"` // price in cents
+	PriceUSDCents  int64    `json:"price_usd_cents"` // platform price in cents
 	WebhookEnabled bool     `json:"webhook_enabled"`
 }
 
 // DefaultPlans returns all available plans.
 func DefaultPlans() []Plan {
 	return []Plan{
-		{ID: "plan_starter", Name: PlanStarter, MonthlyLimit: 1_000, PriceUSDCents: 0, WebhookEnabled: false},
-		{ID: "plan_growth", Name: PlanGrowth, MonthlyLimit: 10_000, PriceUSDCents: 2900, WebhookEnabled: true},
-		{ID: "plan_pro", Name: PlanPro, MonthlyLimit: 100_000, PriceUSDCents: 9900, WebhookEnabled: true},
+		{ID: "plan_trial", Name: PlanTrial, MonthlyLimit: 0, PriceUSDCents: 0, WebhookEnabled: true},
+		{ID: "plan_starter", Name: PlanStarter, MonthlyLimit: 3_000, PriceUSDCents: 7900, WebhookEnabled: false},
+		{ID: "plan_growth", Name: PlanGrowth, MonthlyLimit: 15_000, PriceUSDCents: 14900, WebhookEnabled: true},
+		{ID: "plan_pro", Name: PlanPro, MonthlyLimit: 60_000, PriceUSDCents: 29900, WebhookEnabled: true},
 	}
 }
 
@@ -114,16 +116,39 @@ func PlanByName(name PlanName) (Plan, bool) {
 	return Plan{}, false
 }
 
+func PaidPlans() []Plan {
+	plans := make([]Plan, 0, 3)
+	for _, plan := range DefaultPlans() {
+		if plan.Name == PlanTrial {
+			continue
+		}
+		plans = append(plans, plan)
+	}
+	return plans
+}
+
 // ─── Subscription ───────────────────────────────────────────────────────────
 
 type Subscription struct {
-	ID        string    `json:"id"`
-	TenantID  string    `json:"tenant_id"`
-	PlanID    string    `json:"plan_id"`
-	Plan      *Plan     `json:"plan,omitempty"`
-	Status    string    `json:"status"` // active, cancelled, past_due
-	PeriodEnd time.Time `json:"period_end"`
-	CreatedAt time.Time `json:"created_at"`
+	ID                     string     `json:"id"`
+	TenantID               string     `json:"tenant_id"`
+	PlanID                 string     `json:"plan_id"`
+	Plan                   *Plan      `json:"plan,omitempty"`
+	Status                 string     `json:"status"` // trial, pending, active, past_due, cancelled
+	Provider               string     `json:"provider,omitempty"`
+	ProviderCustomerID     string     `json:"provider_customer_id,omitempty"`
+	ProviderSubscriptionID string     `json:"provider_subscription_id,omitempty"`
+	ProviderPriceID        string     `json:"provider_price_id,omitempty"`
+	CurrentPeriodStart     *time.Time `json:"current_period_start,omitempty"`
+	PeriodEnd              time.Time  `json:"period_end"`
+	TrialEndsAt            *time.Time `json:"trial_ends_at,omitempty"`
+	CancelAtPeriodEnd      bool       `json:"cancel_at_period_end"`
+	CreatedAt              time.Time  `json:"created_at"`
+	UpdatedAt              time.Time  `json:"updated_at"`
+}
+
+func (s *Subscription) TrialActive(now time.Time) bool {
+	return s != nil && s.Status == "trial" && s.PeriodEnd.After(now)
 }
 
 // ─── Usage ──────────────────────────────────────────────────────────────────
@@ -695,6 +720,57 @@ type AddTenantMemberRequest struct {
 
 type UpdateTenantMemberRoleRequest struct {
 	Role UserRole `json:"role"`
+}
+
+type CheckoutSessionRequest struct {
+	TenantID      string
+	TenantName    string
+	CustomerEmail string
+	Plan          Plan
+	SuccessURL    string
+	CancelURL     string
+}
+
+type CheckoutSessionResponse struct {
+	URL       string `json:"url"`
+	SessionID string `json:"session_id"`
+	Provider  string `json:"provider"`
+}
+
+type BillingPortalResponse struct {
+	URL      string `json:"url"`
+	Provider string `json:"provider"`
+}
+
+type CreateCheckoutRequest struct {
+	Plan PlanName `json:"plan"`
+}
+
+type ChangeSubscriptionPlanRequest struct {
+	Plan PlanName `json:"plan"`
+}
+
+type BillingActionResponse struct {
+	Subscription     *Subscription `json:"subscription,omitempty"`
+	CheckoutURL      string        `json:"checkout_url,omitempty"`
+	PortalURL        string        `json:"portal_url,omitempty"`
+	Provider         string        `json:"provider,omitempty"`
+	RequiresCheckout bool          `json:"requires_checkout,omitempty"`
+	Message          string        `json:"message,omitempty"`
+}
+
+type BillingWebhookEvent struct {
+	EventType              string
+	TenantID               string
+	PlanID                 string
+	Status                 string
+	Provider               string
+	ProviderCustomerID     string
+	ProviderSubscriptionID string
+	ProviderPriceID        string
+	CurrentPeriodStart     *time.Time
+	PeriodEnd              *time.Time
+	CancelAtPeriodEnd      bool
 }
 
 // ─── Campaigns ──────────────────────────────────────────────────────────────

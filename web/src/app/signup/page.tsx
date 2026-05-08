@@ -10,6 +10,7 @@ import {
   setAuthTokenExpiry,
   setSelectedTenantID,
 } from "@/lib/auth";
+import { PLAN_OPTIONS } from "@/lib/plans";
 
 export default function SignUpPage() {
   const router = useRouter();
@@ -18,7 +19,7 @@ export default function SignUpPage() {
     email: "",
     password: "",
     tenant_name: "",
-    plan: "starter",
+    plan: "trial",
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -54,18 +55,18 @@ export default function SignUpPage() {
         <section className="flex flex-col justify-center">
           <p className="section-kicker">Onboarding SaaS</p>
           <h1 className="mt-4 text-5xl font-bold text-white">
-            Criar workspace com cara de produto pronto
+            Criar workspace com oferta comercial mais forte
           </h1>
           <p className="mt-4 max-w-xl text-lg leading-8 text-slate-300">
-            O primeiro fluxo precisa vender confianca. Este onboarding prepara
-            usuario, workspace, permissao e plano inicial para o cliente entrar
-            direto na operacao do WhatsApp.
+            O onboarding precisa reduzir friccao e comunicar valor. Escolha um
+            plano competitivo, comece com uma degustacao gratuita de 2 dias e
+            entre direto na operacao.
           </p>
           <div className="mt-8 grid gap-3">
             {[
-              "Cadastro guiado para reduzir friccao de ativacao.",
-              "Plano inicial claro para facilitar demonstracao comercial.",
-              "Workspace pronto para conectar a primeira instancia.",
+              "Planos com precificacao simples para pequenas e medias operacoes.",
+              "Nomes mais premium para vender melhor e explicar menos.",
+              "Degustacao completa por 48 horas antes da ativacao comercial.",
             ].map((item) => (
               <div
                 key={item}
@@ -126,16 +127,52 @@ export default function SignUpPage() {
               onChange={(e) => update("tenant_name", e.target.value)}
               required
             />
-            <select
-              className="input"
-              data-testid="signup-plan"
-              value={form.plan}
-              onChange={(e) => update("plan", e.target.value)}
-            >
-              <option value="starter">Starter</option>
-              <option value="growth">Growth</option>
-              <option value="pro">Pro</option>
-            </select>
+            <div className="grid gap-3" data-testid="signup-plan">
+              {PLAN_OPTIONS.map((plan) => {
+                const selected = form.plan === plan.value;
+                return (
+                  <button
+                    key={plan.value}
+                    className={`rounded-3xl border p-4 text-left transition ${
+                      selected
+                        ? "border-glow bg-glow/10 shadow-[0_0_0_1px_rgba(87,224,194,0.25)]"
+                        : "border-white/10 bg-slate-950/50 hover:border-white/20"
+                    }`}
+                    onClick={() => update("plan", plan.value)}
+                    type="button"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-base font-semibold text-white">
+                          {plan.name}
+                        </p>
+                        <p className="mt-1 text-sm text-slate-300">
+                          {plan.price}
+                        </p>
+                      </div>
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-medium ${
+                          selected
+                            ? "bg-glow/20 text-glow"
+                            : "bg-white/5 text-slate-400"
+                        }`}
+                      >
+                        {selected ? "Selecionado" : "Escolher"}
+                      </span>
+                    </div>
+                    <p className="mt-3 text-sm leading-6 text-slate-400">
+                      {plan.summary}
+                    </p>
+                    <p className="mt-2 text-xs uppercase tracking-[0.18em] text-slate-500">
+                      {plan.details}
+                    </p>
+                    <p className="mt-2 text-xs leading-5 text-slate-500">
+                      Ideal para: {plan.idealFor}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
             {error ? (
               <p className="rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
                 {error}

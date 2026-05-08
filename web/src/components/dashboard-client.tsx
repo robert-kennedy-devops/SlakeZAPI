@@ -60,6 +60,7 @@ import {
   getSelectedTenantID,
   setSelectedTenantID,
 } from "@/lib/auth";
+import { PLAN_OPTIONS } from "@/lib/plans";
 import type {
   AppEvent,
   CurrentUserResponse,
@@ -132,6 +133,7 @@ const QUERY_KEYS = {
   ],
   apiKeys: (tenantID: string) => ["apikeys", tenantID],
   usage: (tenantID: string) => ["usage", tenantID],
+  billingSubscription: (tenantID: string) => ["billing-subscription", tenantID],
   members: (tenantID: string) => ["members", tenantID],
   audit: (tenantID: string, instanceID: string) => [
     "audit",
@@ -427,6 +429,11 @@ export function DashboardClient() {
     queryFn: () => api.usage(token, tenantHeader),
     enabled: Boolean(token && tenantHeader),
   });
+  const billingSubscriptionQuery = useQuery({
+    queryKey: QUERY_KEYS.billingSubscription(tenantHeader),
+    queryFn: () => api.billingSubscription(token, tenantHeader),
+    enabled: Boolean(token && tenantHeader),
+  });
   const queueQuery = useQuery({
     queryKey: QUERY_KEYS.queue(tenantHeader),
     queryFn: () => api.queue(token, tenantHeader),
@@ -450,6 +457,9 @@ export function DashboardClient() {
     enabled: Boolean(token && tenantHeader),
     refetchInterval: 10000,
   });
+
+  const currentSubscription =
+    billingSubscriptionQuery.data ?? summaryQuery.data?.plan;
 
   useEffect(() => {
     if (!token || !tenantHeader || !instanceHeader) return;
@@ -1137,6 +1147,59 @@ export function DashboardClient() {
     onError: handleMutationError,
   });
 
+  const createBillingCheckout = useMutation({
+    mutationFn: (plan: string) =>
+      api.createBillingCheckout(token, tenantHeader, { plan }),
+    onSuccess: (response) => {
+      if (response.checkout_url) {
+        window.location.href = response.checkout_url;
+        return;
+      }
+      notify("Checkout criado.");
+    },
+    onError: handleMutationError,
+  });
+
+  const openBillingPortal = useMutation({
+    mutationFn: () => api.openBillingPortal(token, tenantHeader),
+    onSuccess: (response) => {
+      if (response.portal_url) {
+        window.location.href = response.portal_url;
+        return;
+      }
+      notify("Portal de faturamento aberto.");
+    },
+    onError: handleMutationError,
+  });
+
+  const changeBillingPlan = useMutation({
+    mutationFn: (plan: string) => api.changeBillingPlan(token, tenantHeader, { plan }),
+    onSuccess: (response) => {
+      if (response.checkout_url) {
+        window.location.href = response.checkout_url;
+        return;
+      }
+      notify("Plano atualizado.");
+      void queryClient.invalidateQueries({
+        queryKey: QUERY_KEYS.billingSubscription(tenantHeader),
+      });
+      invalidateTenant(tenantHeader, instanceHeader, queryClient);
+    },
+    onError: handleMutationError,
+  });
+
+  const cancelBillingSubscription = useMutation({
+    mutationFn: () => api.cancelBillingSubscription(token, tenantHeader),
+    onSuccess: () => {
+      notify("Cancelamento agendado para o fim do periodo.");
+      void queryClient.invalidateQueries({
+        queryKey: QUERY_KEYS.billingSubscription(tenantHeader),
+      });
+      invalidateTenant(tenantHeader, instanceHeader, queryClient);
+    },
+    onError: handleMutationError,
+  });
+
   async function signOut() {
     try {
       await api.logout(token);
@@ -1293,16 +1356,27 @@ export function DashboardClient() {
   const groupsErrorMessage = groupsQuery.error
     ? extractErrorMessage(groupsQuery.error)
     : "";
+  const selectedPlanOption = PLAN_OPTIONS.find(
+    (plan) =>
+      currentSubscription?.plan?.name === plan.value ||
+      currentSubscription?.plan_id === `plan_${plan.value}`,
+  );
+  const isTrialSubscription = currentSubscription?.status === "trial";
   const usagePercent = useMemo(() => {
-    const limit =
-      summaryQuery.data?.plan?.plan_id === "plan_pro"
-        ? 100000
-        : summaryQuery.data?.plan?.plan_id === "plan_growth"
-          ? 10000
-          : 1000;
+    if (isTrialSubscription) {
+      return 0;
+    }
+    const limit = currentSubscription?.plan?.monthly_limit ?? 3000;
+    if (!limit) {
+      return 0;
+    }
     const sent = usage?.sent ?? 0;
     return Math.min(100, Math.round((sent / limit) * 100));
-  }, [summaryQuery.data?.plan?.plan_id, usage?.sent]);
+  }, [currentSubscription?.plan?.monthly_limit, isTrialSubscription, usage?.sent]);
+  const planMetricValue = selectedPlanOption?.name ?? currentSubscription?.plan?.name ?? currentSubscription?.plan_id ?? "Degustacao";
+  const planMetricHint = isTrialSubscription
+    ? `trial ativo ate ${formatDate(currentSubscription?.trial_ends_at ?? currentSubscription?.period_end)}`
+    : `vencimento ${formatDate(currentSubscription?.period_end)}`;
   const unreadConversations =
     conversationsQuery.data?.reduce(
       (total, conversation) => total + conversation.unread_count,
@@ -1331,6 +1405,11 @@ export function DashboardClient() {
       id: "advanced",
       label: "Recursos Avancados",
       icon: <MessagesSquare className="h-4 w-4" />,
+    },
+    {
+      id: "billing",
+      label: "Planos e Billing",
+      icon: <Cable className="h-4 w-4" />,
     },
     {
       id: "identity",
@@ -1521,8 +1600,8 @@ export function DashboardClient() {
               <MetricCard
                 icon={<ShieldCheck className="h-5 w-5" />}
                 label="Plano"
-                value={summaryQuery.data?.plan?.plan_id ?? "starter"}
-                hint={`vencimento ${formatDate(summaryQuery.data?.plan?.period_end)}`}
+                value={planMetricValue}
+                hint={planMetricHint}
               />
               <MetricCard
                 icon={<MessageSquareShare className="h-5 w-5" />}
@@ -3605,6 +3684,164 @@ export function DashboardClient() {
 
         {/* ── Perfil, Privacidade e Contatos ───────────────────────────── */}
         <SettingsModule
+          billingManagement={
+            <>
+              <div className="grid gap-6">
+                <div className="panel p-6">
+                  <p className="section-kicker">Planos e faturamento</p>
+                  <h2 className="mt-2 text-xl font-semibold text-white">
+                    Ativacao, upgrade e gestao comercial
+                  </h2>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
+                    O cliente pode comecar pela degustacao gratuita de 2 dias e,
+                    quando fizer sentido, ativar um plano pago sem depender de
+                    suporte manual.
+                  </p>
+                </div>
+
+                <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+                  <FormPanel
+                    title="Resumo da assinatura"
+                    icon={<Cable className="h-4 w-4" />}
+                    action={
+                      <div className="flex flex-wrap gap-3">
+                        <button
+                          className="button-secondary"
+                          disabled={
+                            openBillingPortal.isPending ||
+                            !currentSubscription?.provider_customer_id
+                          }
+                          onClick={() => openBillingPortal.mutate()}
+                          type="button"
+                        >
+                          Portal de cobranca
+                        </button>
+                        <button
+                          className="button-danger"
+                          disabled={
+                            cancelBillingSubscription.isPending ||
+                            !currentSubscription?.provider_subscription_id
+                          }
+                          onClick={() => cancelBillingSubscription.mutate()}
+                          type="button"
+                        >
+                          Cancelar no fim do ciclo
+                        </button>
+                      </div>
+                    }
+                  >
+                    <dl className="space-y-3 text-sm text-slate-300">
+                      <div className="flex justify-between gap-4">
+                        <dt>Status</dt>
+                        <dd>{formatSubscriptionStatus(currentSubscription?.status)}</dd>
+                      </div>
+                      <div className="flex justify-between gap-4">
+                        <dt>Plano base</dt>
+                        <dd>{selectedPlanOption?.name ?? currentSubscription?.plan_id ?? "-"}</dd>
+                      </div>
+                      <div className="flex justify-between gap-4">
+                        <dt>Provider</dt>
+                        <dd>{currentSubscription?.provider || "trial local"}</dd>
+                      </div>
+                      <div className="flex justify-between gap-4">
+                        <dt>Validade</dt>
+                        <dd>
+                          {formatDate(
+                            currentSubscription?.trial_ends_at ??
+                              currentSubscription?.period_end,
+                          )}
+                        </dd>
+                      </div>
+                    </dl>
+                    {isTrialSubscription ? (
+                      <div className="rounded-2xl border border-glow/20 bg-glow/10 px-4 py-3 text-sm text-glow">
+                        Trial degustacao ativo com todos os recursos liberados
+                        por 2 dias.
+                      </div>
+                    ) : null}
+                    {currentSubscription?.cancel_at_period_end ? (
+                      <div className="rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
+                        Cancelamento agendado para o fim do periodo atual.
+                      </div>
+                    ) : null}
+                  </FormPanel>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {PLAN_OPTIONS.map((plan) => {
+                      const isCurrentPlan =
+                        currentSubscription?.plan?.name === plan.value ||
+                        currentSubscription?.plan_id === `plan_${plan.value}`;
+                      const isTrialCard = plan.value === "trial";
+                      const disabled =
+                        isTrialCard ||
+                        createBillingCheckout.isPending ||
+                        changeBillingPlan.isPending ||
+                        (isCurrentPlan && currentSubscription?.status === "active");
+
+                      return (
+                        <div
+                          key={plan.value}
+                          className={`panel p-5 ${
+                            isCurrentPlan ? "border-glow/40 shadow-[0_0_0_1px_rgba(87,224,194,0.18)]" : ""
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <div>
+                              <p className="text-base font-semibold text-white">
+                                {plan.name}
+                              </p>
+                              <p className="mt-1 text-sm text-slate-300">
+                                {plan.price}
+                              </p>
+                            </div>
+                            <span className="badge">{plan.badge ?? plan.code}</span>
+                          </div>
+                          <p className="mt-4 text-sm leading-6 text-slate-400">
+                            {plan.summary}
+                          </p>
+                          <p className="mt-3 text-xs uppercase tracking-[0.18em] text-slate-500">
+                            {plan.details}
+                          </p>
+                          <p className="mt-3 text-sm text-slate-300">
+                            Ideal para: {plan.idealFor}
+                          </p>
+                          <div className="mt-4 space-y-2 text-sm text-slate-300">
+                            {plan.highlights.map((highlight) => (
+                              <p key={highlight}>{highlight}</p>
+                            ))}
+                          </div>
+                          <div className="mt-5">
+                            {isTrialCard ? (
+                              <button
+                                className="button-secondary w-full"
+                                disabled
+                                type="button"
+                              >
+                                Degustacao disponivel no onboarding
+                              </button>
+                            ) : (
+                              <button
+                                className="button-primary w-full"
+                                disabled={disabled}
+                                onClick={() => changeBillingPlan.mutate(plan.value)}
+                                type="button"
+                              >
+                                {isCurrentPlan && currentSubscription?.status === "active"
+                                  ? "Plano atual"
+                                  : isTrialSubscription
+                                    ? `Ativar ${plan.name}`
+                                    : `Migrar para ${plan.name}`}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </>
+          }
           accountSecurity={
             <>
               <div className="grid gap-6">
@@ -4131,6 +4368,9 @@ function invalidateTenant(
     queryKey: QUERY_KEYS.queueDeadLetters(tenantID),
   });
   queryClient.invalidateQueries({ queryKey: QUERY_KEYS.usage(tenantID) });
+  queryClient.invalidateQueries({
+    queryKey: QUERY_KEYS.billingSubscription(tenantID),
+  });
   queryClient.invalidateQueries({ queryKey: QUERY_KEYS.members(tenantID) });
   if (instanceID) {
     queryClient.invalidateQueries({
@@ -4160,6 +4400,23 @@ function extractErrorMessage(error: unknown) {
     return "Falha inesperada.";
   }
   return error.message.trim();
+}
+
+function formatSubscriptionStatus(status?: string) {
+  switch (status) {
+    case "trial":
+      return "Trial ativo";
+    case "active":
+      return "Ativo";
+    case "pending":
+      return "Aguardando pagamento";
+    case "past_due":
+      return "Pagamento pendente";
+    case "cancelled":
+      return "Cancelado";
+    default:
+      return "Nao configurado";
+  }
 }
 
 function buildInteractivePayload(form: {

@@ -536,13 +536,53 @@ ws.onmessage = (e) => {
 
 ## 📊 Planos de Billing
 
-| Plano | Mensagens/mês | Preço | Webhook |
-|-------|--------------|-------|---------|
-| Starter | 1.000 | Grátis | ❌ |
-| Growth | 10.000 | R$ ~145/mês | ✅ |
-| Pro | 100.000 | R$ ~495/mês | ✅ |
+Posicionamento sugerido para o produto:
+
+- abaixo das plataformas enterprise mais caras
+- acima das APIs mais cruas que vendem apenas instância
+- simples o suficiente para venda consultiva curta ou autosserviço
+
+| Plano | Oferta | Preço | Webhook |
+|-------|--------|-------|---------|
+| Trial | Todas as funcionalidades por 48h | R$ 0 | ✅ |
+| Starter | 3.000 mensagens/mês | R$ 79/mês | ❌ |
+| Growth | 15.000 mensagens/mês | R$ 149/mês | ✅ |
+| Pro | 60.000 mensagens/mês | R$ 299/mês | ✅ |
+
+Leitura comercial rápida:
+
+- `Starter`: entrada competitiva para pequenas operações que precisam profissionalizar o WhatsApp
+- `Growth`: plano principal para clientes com atendimento, campanhas e integração
+- `Pro`: opção para operações com rotina intensa, múltiplos fluxos e maior previsibilidade
+- `Trial`: degustação gratuita para testar a plataforma completa antes da ativação comercial
+
+Tabela comercial final:
+
+| Nome comercial | Código interno | Ideal para quem | Faixa de uso |
+|-------|-------|-------|---------|
+| Degustação | `trial` | quem quer validar o produto, testar integrações e apresentar a operação antes de contratar | prova rápida de valor |
+| Essencial | `starter` | pequenos negócios, consultórios, operações locais e times iniciando estrutura comercial | validação e operação enxuta |
+| Profissional | `growth` | empresas em crescimento com atendimento ativo, campanhas recorrentes e integrações | melhor custo-benefício |
+| Escala | `pro` | operações com maior volume, múltiplos fluxos, rotinas intensas e necessidade de previsibilidade | crescimento com mais fôlego |
 
 Quando o limite é excedido, a API retorna `HTTP 402 Payment Required`.
+
+Billing autosserviço agora inclui:
+
+- checkout para ativação do plano pago
+- webhook de confirmação da assinatura
+- upgrade/downgrade direto no dashboard
+- portal de cobrança do cliente
+- degustação gratuita de 2 dias com todos os recursos liberados
+
+Variáveis para Stripe:
+
+- `APP_BASE_URL`
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- `STRIPE_PRICE_STARTER_ID`
+- `STRIPE_PRICE_GROWTH_ID`
+- `STRIPE_PRICE_PRO_ID`
 
 ---
 

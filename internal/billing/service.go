@@ -3,6 +3,7 @@ package billing
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/whatsapp-saas/api/internal/domain"
 	"github.com/whatsapp-saas/api/pkg/logger"
@@ -43,6 +44,13 @@ func (s *Service) CheckLimit(ctx context.Context, tenantID string) error {
 			Plan:     &plan,
 			Status:   "active",
 		}
+	}
+	now := time.Now().UTC()
+	if sub.TrialActive(now) {
+		return nil
+	}
+	if sub.Status != "active" {
+		return domain.ErrBillingCheckoutOnly
 	}
 
 	usage, err := s.usageRepo.GetCurrentMonth(ctx, tenantID)

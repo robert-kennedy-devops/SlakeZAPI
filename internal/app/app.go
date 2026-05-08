@@ -44,6 +44,12 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("database: %w", err)
 	}
+	if err := repository.SyncDefaultPlans(context.Background(), db); err != nil {
+		return nil, fmt.Errorf("sync plans: %w", err)
+	}
+	if err := repository.EnsureSubscriptionSchema(context.Background(), db); err != nil {
+		return nil, fmt.Errorf("ensure subscription schema: %w", err)
+	}
 
 	// ── Repositories ────────────────────────────────────────────────────────
 	tenantRepo := repository.NewTenantRepository(db)
@@ -70,6 +76,11 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 
 	// ── Services ────────────────────────────────────────────────────────────
 	billingSvc := billing.NewService(usageRepo, subRepo, log)
+	billingGateway := billing.NewStripeGateway(cfg.StripeSecretKey, cfg.StripeWebhookSecret, map[string]string{
+		"plan_starter": cfg.StripePriceStarterID,
+		"plan_growth":  cfg.StripePriceGrowthID,
+		"plan_pro":     cfg.StripePriceProID,
+	})
 	waMgr, err := whatsapp.NewManager(db, eventBus, instanceRepo, sessionRepo, msgRepo, billingSvc, log)
 	if err != nil {
 		return nil, fmt.Errorf("whatsapp manager: %w", err)
@@ -87,7 +98,7 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 	}
 	waUC := usecase.NewWhatsAppUsecase(waMgr, instanceRepo, eventBus, log)
 	instanceUC := usecase.NewInstanceUsecase(tenantRepo, instanceRepo, log)
-	billingUC := usecase.NewBillingUsecase(billingSvc, log)
+	billingUC := usecase.NewBillingUsecase(billingSvc, tenantRepo, subRepo, billingGateway, cfg.AppBaseURL, log)
 	campaignUC := usecase.NewCampaignUsecase(campaignRepo, instanceRepo, msgUC, log)
 	opsUC := usecase.NewOperationsUsecase(workerPool)
 	auditUC := usecase.NewAuditUsecase(auditRepo)

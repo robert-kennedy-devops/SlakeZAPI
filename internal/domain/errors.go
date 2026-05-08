@@ -26,6 +26,9 @@ var (
 	// Billing
 	ErrLimitExceeded  = errors.New("monthly message limit exceeded")
 	ErrNoSubscription = errors.New("no active subscription found")
+	ErrBillingNotConfigured = errors.New("billing gateway is not configured")
+	ErrBillingCheckoutOnly  = errors.New("subscription requires checkout activation")
+	ErrBillingWebhookFailed = errors.New("failed to process billing webhook")
 
 	// WhatsApp
 	ErrSessionNotFound     = errors.New("whatsapp session not found")

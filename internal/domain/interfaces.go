@@ -108,6 +108,7 @@ type CampaignRepository interface {
 // SubscriptionRepository handles subscription + billing persistence.
 type SubscriptionRepository interface {
 	GetByTenant(ctx context.Context, tenantID string) (*Subscription, error)
+	GetByProviderSubscriptionID(ctx context.Context, provider, subscriptionID string) (*Subscription, error)
 	Upsert(ctx context.Context, sub *Subscription) error
 }
 
@@ -191,6 +192,15 @@ type BillingService interface {
 	TrackSent(ctx context.Context, tenantID string) error
 	TrackReceived(ctx context.Context, tenantID string) error
 	GetUsage(ctx context.Context, tenantID string) (*Usage, error)
+}
+
+type BillingGateway interface {
+	CreateCheckoutSession(ctx context.Context, req CheckoutSessionRequest) (*CheckoutSessionResponse, error)
+	CreateBillingPortalSession(ctx context.Context, customerID, returnURL string) (*BillingPortalResponse, error)
+	UpdateSubscriptionPlan(ctx context.Context, subscriptionID, priceID string) (*Subscription, error)
+	CancelSubscription(ctx context.Context, subscriptionID string) (*Subscription, error)
+	ParseWebhook(payload []byte, signature string) (*BillingWebhookEvent, error)
+	PriceIDForPlan(planID string) string
 }
 
 type QueueService interface {

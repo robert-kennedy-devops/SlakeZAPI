@@ -12,6 +12,8 @@ require (
 	google.golang.org/protobuf v1.36.11
 )
 
+require github.com/stripe/stripe-go/v84 v84.3.0 // indirect
+
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/beeper/argo-go v1.1.2 // indirect

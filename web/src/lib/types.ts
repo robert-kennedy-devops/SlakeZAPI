@@ -76,9 +76,24 @@ export interface Subscription {
   id: string;
   tenant_id: string;
   plan_id: string;
+  plan?: {
+    id: string;
+    name: string;
+    monthly_limit: number;
+    price_usd_cents: number;
+    webhook_enabled: boolean;
+  };
   status: string;
+  provider?: string;
+  provider_customer_id?: string;
+  provider_subscription_id?: string;
+  provider_price_id?: string;
+  current_period_start?: string;
   period_end: string;
+  trial_ends_at?: string;
+  cancel_at_period_end: boolean;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface TenantSummary {
@@ -87,6 +102,15 @@ export interface TenantSummary {
   instances?: Instance[];
   usage?: Usage;
   plan?: Subscription;
+}
+
+export interface BillingActionResponse {
+  subscription?: Subscription;
+  checkout_url?: string;
+  portal_url?: string;
+  provider?: string;
+  requires_checkout?: boolean;
+  message?: string;
 }
 
 export interface Instance {

@@ -20,7 +20,7 @@ CREATE INDEX idx_tenants_email ON tenants (email);
 -- ── Plans ───────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS plans (
     id               TEXT    PRIMARY KEY,
-    name             TEXT    NOT NULL UNIQUE,   -- starter | growth | pro
+    name             TEXT    NOT NULL UNIQUE,   -- trial | starter | growth | pro
     monthly_limit    BIGINT  NOT NULL,
     price_usd_cents  BIGINT  NOT NULL DEFAULT 0,
     webhook_enabled  BOOLEAN NOT NULL DEFAULT false
@@ -28,9 +28,10 @@ CREATE TABLE IF NOT EXISTS plans (
 
 -- Seed default plans
 INSERT INTO plans (id, name, monthly_limit, price_usd_cents, webhook_enabled) VALUES
-    ('plan_starter', 'starter',   1000,   0,    false),
-    ('plan_growth',  'growth',    10000,  2900, true),
-    ('plan_pro',     'pro',       100000, 9900, true)
+    ('plan_trial',   'trial',         0,      0, true),
+    ('plan_starter', 'starter',   3000,   7900,  false),
+    ('plan_growth',  'growth',    15000,  14900, true),
+    ('plan_pro',     'pro',       60000,  29900, true)
 ON CONFLICT (id) DO NOTHING;
 
 -- ── API Keys ─────────────────────────────────────────────────
@@ -50,15 +51,24 @@ CREATE INDEX idx_api_keys_hash    ON api_keys (key_hash) WHERE active = true;
 
 -- ── Subscriptions ────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS subscriptions (
-    id          TEXT        PRIMARY KEY,
-    tenant_id   TEXT        NOT NULL UNIQUE REFERENCES tenants(id) ON DELETE CASCADE,
-    plan_id     TEXT        NOT NULL REFERENCES plans(id),
-    status      TEXT        NOT NULL DEFAULT 'active',  -- active | cancelled | past_due
-    period_end  TIMESTAMPTZ NOT NULL,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    id                       TEXT        PRIMARY KEY,
+    tenant_id                TEXT        NOT NULL UNIQUE REFERENCES tenants(id) ON DELETE CASCADE,
+    plan_id                  TEXT        NOT NULL REFERENCES plans(id),
+    status                   TEXT        NOT NULL DEFAULT 'trial',  -- trial | pending | active | past_due | cancelled
+    provider                 TEXT        NOT NULL DEFAULT '',
+    provider_customer_id     TEXT        NOT NULL DEFAULT '',
+    provider_subscription_id TEXT        NOT NULL DEFAULT '',
+    provider_price_id        TEXT        NOT NULL DEFAULT '',
+    current_period_start     TIMESTAMPTZ,
+    period_end               TIMESTAMPTZ NOT NULL,
+    trial_ends_at            TIMESTAMPTZ,
+    cancel_at_period_end     BOOLEAN     NOT NULL DEFAULT false,
+    created_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at               TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX idx_subscriptions_tenant ON subscriptions (tenant_id);
+CREATE INDEX idx_subscriptions_provider_subscription_id ON subscriptions (provider_subscription_id);
 
 -- ── Usage ────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS usage (

@@ -27,6 +27,10 @@ func (s *subRepoStub) GetByTenant(ctx context.Context, tenantID string) (*domain
 	return s.sub, s.err
 }
 
+func (s *subRepoStub) GetByProviderSubscriptionID(ctx context.Context, provider, subscriptionID string) (*domain.Subscription, error) {
+	return nil, domain.ErrNoSubscription
+}
+
 func (s *subRepoStub) Upsert(ctx context.Context, sub *domain.Subscription) error { return nil }
 
 func TestCheckLimitFallsBackToStarterPlan(t *testing.T) {
@@ -45,7 +49,7 @@ func TestCheckLimitReturnsLimitExceeded(t *testing.T) {
 	plan, _ := domain.PlanByName(domain.PlanGrowth)
 	service := NewService(
 		&usageRepoStub{usage: &domain.Usage{TenantID: "tenant-1", Sent: plan.MonthlyLimit}},
-		&subRepoStub{sub: &domain.Subscription{TenantID: "tenant-1", Plan: &plan}},
+		&subRepoStub{sub: &domain.Subscription{TenantID: "tenant-1", Plan: &plan, Status: "active"}},
 		logger.New(),
 	)
 

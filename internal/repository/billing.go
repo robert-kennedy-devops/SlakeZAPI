@@ -10,6 +10,44 @@ import (
 	"github.com/whatsapp-saas/api/internal/domain"
 )
 
+func SyncDefaultPlans(ctx context.Context, db *sql.DB) error {
+	for _, plan := range domain.DefaultPlans() {
+		_, err := db.ExecContext(ctx, `
+			INSERT INTO plans (id, name, monthly_limit, price_usd_cents, webhook_enabled)
+			VALUES ($1, $2, $3, $4, $5)
+			ON CONFLICT (id) DO UPDATE
+			  SET name = EXCLUDED.name,
+			      monthly_limit = EXCLUDED.monthly_limit,
+			      price_usd_cents = EXCLUDED.price_usd_cents,
+			      webhook_enabled = EXCLUDED.webhook_enabled
+		`, plan.ID, plan.Name, plan.MonthlyLimit, plan.PriceUSDCents, plan.WebhookEnabled)
+		if err != nil {
+			return fmt.Errorf("sync default plans: %w", err)
+		}
+	}
+	return nil
+}
+
+func EnsureSubscriptionSchema(ctx context.Context, db *sql.DB) error {
+	statements := []string{
+		`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS provider TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS provider_customer_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS provider_subscription_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS provider_price_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS current_period_start TIMESTAMPTZ`,
+		`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMPTZ`,
+		`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS cancel_at_period_end BOOLEAN NOT NULL DEFAULT false`,
+		`ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`,
+		`CREATE INDEX IF NOT EXISTS idx_subscriptions_provider_subscription_id ON subscriptions (provider_subscription_id)`,
+	}
+	for _, stmt := range statements {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("ensure subscription schema: %w", err)
+		}
+	}
+	return nil
+}
+
 // ─── Webhook Repository ──────────────────────────────────────────────────────
 
 type webhookRepo struct{ db *sql.DB }
@@ -243,36 +281,85 @@ func NewSubscriptionRepository(db *sql.DB) domain.SubscriptionRepository {
 
 func (r *subscriptionRepo) GetByTenant(ctx context.Context, tenantID string) (*domain.Subscription, error) {
 	q := `
-		SELECT s.id, s.tenant_id, s.plan_id, s.status, s.period_end, s.created_at,
+		SELECT s.id, s.tenant_id, s.plan_id, s.status, s.provider, s.provider_customer_id,
+		       s.provider_subscription_id, s.provider_price_id, s.current_period_start,
+		       s.period_end, s.trial_ends_at, s.cancel_at_period_end, s.created_at, s.updated_at,
 		       p.id, p.name, p.monthly_limit, p.price_usd_cents, p.webhook_enabled
 		FROM subscriptions s
 		JOIN plans p ON p.id = s.plan_id
-		WHERE s.tenant_id = $1 AND s.status = 'active'
-		ORDER BY s.created_at DESC LIMIT 1
+		WHERE s.tenant_id = $1
+		  AND s.status IN ('trial', 'pending', 'active', 'past_due', 'cancelled')
+		ORDER BY s.updated_at DESC, s.created_at DESC LIMIT 1
 	`
+	return r.scanSubscription(ctx, q, tenantID)
+}
+
+func (r *subscriptionRepo) GetByProviderSubscriptionID(ctx context.Context, provider, subscriptionID string) (*domain.Subscription, error) {
+	q := `
+		SELECT s.id, s.tenant_id, s.plan_id, s.status, s.provider, s.provider_customer_id,
+		       s.provider_subscription_id, s.provider_price_id, s.current_period_start,
+		       s.period_end, s.trial_ends_at, s.cancel_at_period_end, s.created_at, s.updated_at,
+		       p.id, p.name, p.monthly_limit, p.price_usd_cents, p.webhook_enabled
+		FROM subscriptions s
+		JOIN plans p ON p.id = s.plan_id
+		WHERE s.provider = $1 AND s.provider_subscription_id = $2
+		LIMIT 1
+	`
+	return r.scanSubscription(ctx, q, provider, subscriptionID)
+}
+
+func (r *subscriptionRepo) scanSubscription(ctx context.Context, query string, args ...interface{}) (*domain.Subscription, error) {
 	sub := &domain.Subscription{Plan: &domain.Plan{}}
-	err := r.db.QueryRowContext(ctx, q, tenantID).Scan(
-		&sub.ID, &sub.TenantID, &sub.PlanID, &sub.Status, &sub.PeriodEnd, &sub.CreatedAt,
+	var currentPeriodStart sql.NullTime
+	var trialEndsAt sql.NullTime
+	err := r.db.QueryRowContext(ctx, query, args...).Scan(
+		&sub.ID, &sub.TenantID, &sub.PlanID, &sub.Status, &sub.Provider, &sub.ProviderCustomerID,
+		&sub.ProviderSubscriptionID, &sub.ProviderPriceID, &currentPeriodStart,
+		&sub.PeriodEnd, &trialEndsAt, &sub.CancelAtPeriodEnd, &sub.CreatedAt, &sub.UpdatedAt,
 		&sub.Plan.ID, &sub.Plan.Name, &sub.Plan.MonthlyLimit, &sub.Plan.PriceUSDCents, &sub.Plan.WebhookEnabled,
 	)
 	if err == sql.ErrNoRows {
 		return nil, domain.ErrNoSubscription
 	}
 	if err != nil {
-		return nil, fmt.Errorf("subscriptionRepo.GetByTenant: %w", err)
+		return nil, fmt.Errorf("subscriptionRepo.scanSubscription: %w", err)
+	}
+	if currentPeriodStart.Valid {
+		t := currentPeriodStart.Time
+		sub.CurrentPeriodStart = &t
+	}
+	if trialEndsAt.Valid {
+		t := trialEndsAt.Time
+		sub.TrialEndsAt = &t
 	}
 	return sub, nil
 }
 
 func (r *subscriptionRepo) Upsert(ctx context.Context, sub *domain.Subscription) error {
 	q := `
-		INSERT INTO subscriptions (id, tenant_id, plan_id, status, period_end, created_at)
-		VALUES ($1,$2,$3,$4,$5,$6)
+		INSERT INTO subscriptions (
+			id, tenant_id, plan_id, status, provider, provider_customer_id,
+			provider_subscription_id, provider_price_id, current_period_start,
+			period_end, trial_ends_at, cancel_at_period_end, created_at, updated_at
+		)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
 		ON CONFLICT (tenant_id) DO UPDATE
-		  SET plan_id=$3, status=$4, period_end=$5
+		  SET plan_id=$3,
+		      status=$4,
+		      provider=$5,
+		      provider_customer_id=$6,
+		      provider_subscription_id=$7,
+		      provider_price_id=$8,
+		      current_period_start=$9,
+		      period_end=$10,
+		      trial_ends_at=$11,
+		      cancel_at_period_end=$12,
+		      updated_at=$14
 	`
 	_, err := r.db.ExecContext(ctx, q,
-		sub.ID, sub.TenantID, sub.PlanID, sub.Status, sub.PeriodEnd, sub.CreatedAt)
+		sub.ID, sub.TenantID, sub.PlanID, sub.Status, sub.Provider, sub.ProviderCustomerID,
+		sub.ProviderSubscriptionID, sub.ProviderPriceID, sub.CurrentPeriodStart,
+		sub.PeriodEnd, sub.TrialEndsAt, sub.CancelAtPeriodEnd, sub.CreatedAt, sub.UpdatedAt)
 	return err
 }
 

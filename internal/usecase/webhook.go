@@ -45,7 +45,7 @@ func (u *WebhookUsecase) Register(ctx context.Context, tenantID string, req doma
 	if err != nil {
 		return nil, err
 	}
-	if !sub.Plan.WebhookEnabled {
+	if !sub.TrialActive(time.Now().UTC()) && !sub.Plan.WebhookEnabled {
 		return nil, domain.ErrBadRequest
 	}
 

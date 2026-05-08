@@ -668,7 +668,7 @@ func newIntegrationServer(t *testing.T, db *sql.DB) http.Handler {
 	msgUC := usecase.NewMessageUsecase(msgRepo, instanceRepo, campaignRepo, waSvc, billingSvc, eventBus, log)
 	waUC := usecase.NewWhatsAppUsecase(waSvc, instanceRepo, eventBus, log)
 	instanceUC := usecase.NewInstanceUsecase(tenantRepo, instanceRepo, log)
-	billingUC := usecase.NewBillingUsecase(billingSvc, log)
+	billingUC := usecase.NewBillingUsecase(billingSvc, tenantRepo, subRepo, nil, "http://localhost:3000", log)
 	campaignUC := usecase.NewCampaignUsecase(campaignRepo, instanceRepo, msgUC, log)
 	opsUC := usecase.NewOperationsUsecase(pool)
 	auditUC := usecase.NewAuditUsecase(auditRepo)

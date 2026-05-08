@@ -3,6 +3,7 @@ import type {
   AuditLog,
   AppEvent,
   ArchiveChatRequest,
+  BillingActionResponse,
   ContactAvatar,
   ContactCardRequest,
   CreateAPIKeyResponse,
@@ -36,6 +37,7 @@ import type {
   ResolvedContact,
   SendMessageResponse,
   SessionStatus,
+  Subscription,
   TenantMember,
   TenantSummary,
   Usage,
@@ -483,6 +485,42 @@ export const api = {
     }),
   usage: (token: string, tenantID: string) =>
     request<Usage>("/app/usage", { token, tenantID }),
+  billingSubscription: (token: string, tenantID: string) =>
+    request<Subscription>("/app/billing/subscription", { token, tenantID }),
+  createBillingCheckout: (
+    token: string,
+    tenantID: string,
+    body: { plan: string },
+  ) =>
+    request<BillingActionResponse>("/app/billing/checkout", {
+      method: "POST",
+      token,
+      tenantID,
+      body,
+    }),
+  openBillingPortal: (token: string, tenantID: string) =>
+    request<BillingActionResponse>("/app/billing/portal", {
+      method: "POST",
+      token,
+      tenantID,
+    }),
+  changeBillingPlan: (
+    token: string,
+    tenantID: string,
+    body: { plan: string },
+  ) =>
+    request<BillingActionResponse>("/app/billing/change-plan", {
+      method: "POST",
+      token,
+      tenantID,
+      body,
+    }),
+  cancelBillingSubscription: (token: string, tenantID: string) =>
+    request<BillingActionResponse>("/app/billing/cancel", {
+      method: "POST",
+      token,
+      tenantID,
+    }),
   queue: (token: string, tenantID: string) =>
     request<QueueSnapshot>("/app/queue", { token, tenantID }),
   queueDeadLetters: (token: string, tenantID: string) =>

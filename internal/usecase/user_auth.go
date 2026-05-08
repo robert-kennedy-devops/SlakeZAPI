@@ -73,7 +73,7 @@ func (u *UserAuthUsecase) SignUp(ctx context.Context, req domain.SignUpRequest) 
 		return nil, "", fmt.Errorf("%w: tenant_name is required", domain.ErrBadRequest)
 	}
 	if req.Plan == "" {
-		req.Plan = domain.PlanStarter
+		req.Plan = domain.PlanTrial
 	}
 	plan, ok := domain.PlanByName(req.Plan)
 	if !ok {
@@ -131,12 +131,14 @@ func (u *UserAuthUsecase) SignUp(ctx context.Context, req domain.SignUpRequest) 
 	}
 
 	sub := &domain.Subscription{
-		ID:        uuid.NewString(),
-		TenantID:  tenant.ID,
-		PlanID:    plan.ID,
-		Status:    "active",
-		PeriodEnd: now.Add(30 * 24 * time.Hour),
-		CreatedAt: now,
+		ID:          uuid.NewString(),
+		TenantID:    tenant.ID,
+		PlanID:      plan.ID,
+		Status:      "trial",
+		PeriodEnd:   now.Add(48 * time.Hour),
+		TrialEndsAt: timePtr(now.Add(48 * time.Hour)),
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
 	if err := u.subRepo.Upsert(ctx, sub); err != nil {
 		return nil, "", err

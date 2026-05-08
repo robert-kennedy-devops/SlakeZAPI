@@ -64,6 +64,12 @@ func DomainError(w http.ResponseWriter, err error) {
 	case errors.Is(err, domain.ErrConflict),
 		errors.Is(err, domain.ErrUserAlreadyInTenant):
 		Error(w, http.StatusConflict, err.Error())
+	case errors.Is(err, domain.ErrBillingNotConfigured):
+		Error(w, http.StatusNotImplemented, err.Error())
+	case errors.Is(err, domain.ErrBillingCheckoutOnly):
+		Error(w, http.StatusPaymentRequired, err.Error())
+	case errors.Is(err, domain.ErrBillingWebhookFailed):
+		Error(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, domain.ErrBadRequest),
 		errors.Is(err, domain.ErrInvalidPhone),
 		errors.Is(err, domain.ErrNoSubscription),

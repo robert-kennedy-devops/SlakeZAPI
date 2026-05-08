@@ -51,6 +51,14 @@ type Config struct {
 	// AI
 	OpenAIAPIKey             string
 	OpenAITranscriptionModel string
+
+	// Billing / Stripe
+	AppBaseURL            string
+	StripeSecretKey       string
+	StripeWebhookSecret   string
+	StripePriceStarterID  string
+	StripePriceGrowthID   string
+	StripePriceProID      string
 }
 
 func Load() (*Config, error) {
@@ -77,6 +85,12 @@ func Load() (*Config, error) {
 		MetricsToken:              getEnv("METRICS_TOKEN", ""),
 		OpenAIAPIKey:              getEnv("OPENAI_API_KEY", ""),
 		OpenAITranscriptionModel:  getEnv("OPENAI_TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe"),
+		AppBaseURL:                getEnv("APP_BASE_URL", "http://localhost:3000"),
+		StripeSecretKey:           getEnv("STRIPE_SECRET_KEY", ""),
+		StripeWebhookSecret:       getEnv("STRIPE_WEBHOOK_SECRET", ""),
+		StripePriceStarterID:      getEnv("STRIPE_PRICE_STARTER_ID", ""),
+		StripePriceGrowthID:       getEnv("STRIPE_PRICE_GROWTH_ID", ""),
+		StripePriceProID:          getEnv("STRIPE_PRICE_PRO_ID", ""),
 		CORSAllowedOrigins: getListEnv("CORS_ALLOWED_ORIGINS", []string{
 			"http://localhost:3000",
 		}),

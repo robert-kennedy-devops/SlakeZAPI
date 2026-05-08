@@ -58,7 +58,7 @@ func (u *AuthUsecase) BootstrapTenant(ctx context.Context, req domain.BootstrapT
 	}
 
 	if req.Plan == "" {
-		req.Plan = domain.PlanStarter
+		req.Plan = domain.PlanTrial
 	}
 	plan, ok := domain.PlanByName(req.Plan)
 	if !ok {
@@ -80,12 +80,14 @@ func (u *AuthUsecase) BootstrapTenant(ctx context.Context, req domain.BootstrapT
 	}
 
 	sub := &domain.Subscription{
-		ID:        uuid.NewString(),
-		TenantID:  tenant.ID,
-		PlanID:    plan.ID,
-		Status:    "active",
-		PeriodEnd: time.Now().UTC().Add(30 * 24 * time.Hour),
-		CreatedAt: time.Now().UTC(),
+		ID:          uuid.NewString(),
+		TenantID:    tenant.ID,
+		PlanID:      plan.ID,
+		Status:      "trial",
+		PeriodEnd:   time.Now().UTC().Add(48 * time.Hour),
+		TrialEndsAt: timePtr(time.Now().UTC().Add(48 * time.Hour)),
+		CreatedAt:   time.Now().UTC(),
+		UpdatedAt:   time.Now().UTC(),
 	}
 	if err := u.subRepo.Upsert(ctx, sub); err != nil {
 		return nil, err
@@ -254,6 +256,10 @@ func hashKey(key, salt string) string {
 	h := sha256.New()
 	h.Write([]byte(salt + key))
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+func timePtr(t time.Time) *time.Time {
+	return &t
 }
 
 func isUniqueViolation(err error) bool {
