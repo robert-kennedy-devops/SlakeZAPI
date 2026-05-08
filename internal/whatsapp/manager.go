@@ -16,6 +16,8 @@ import (
 	"github.com/whatsapp-saas/api/internal/domain"
 	"github.com/whatsapp-saas/api/pkg/logger"
 	"go.mau.fi/whatsmeow"
+	wmappstate "go.mau.fi/whatsmeow/appstate"
+	waCommon "go.mau.fi/whatsmeow/proto/waCommon"
 	waProto "go.mau.fi/whatsmeow/proto/waE2E"
 	wmstore "go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
@@ -1115,6 +1117,673 @@ func buildMediaMessage(req domain.SendMediaMessageRequest, upload whatsmeow.Uplo
 				FileLength:    proto.Uint64(upload.FileLength),
 			},
 		}
+	}
+}
+
+func (m *Manager) SendLocationMessage(ctx context.Context, tenantID, instanceID string, req domain.LocationMessageRequest) (string, error) {
+	sess, err := m.ensureSession(ctx, tenantID, instanceID)
+	if err != nil {
+		return "", err
+	}
+	if !sess.client.IsConnected() {
+		return "", domain.ErrSessionNotConnected
+	}
+	jid := wmtypes.NewJID(req.Phone, wmtypes.DefaultUserServer)
+	msg := &waProto.Message{
+		LocationMessage: &waProto.LocationMessage{
+			DegreesLatitude:  proto.Float64(req.Latitude),
+			DegreesLongitude: proto.Float64(req.Longitude),
+			Name:             proto.String(req.Name),
+			Address:          proto.String(req.Address),
+		},
+	}
+	resp, err := sess.client.SendMessage(ctx, jid, msg)
+	if err != nil {
+		return "", fmt.Errorf("send location: %w", err)
+	}
+	return resp.ID, nil
+}
+
+func (m *Manager) SendContactCard(ctx context.Context, tenantID, instanceID string, req domain.ContactCardRequest) (string, error) {
+	sess, err := m.ensureSession(ctx, tenantID, instanceID)
+	if err != nil {
+		return "", err
+	}
+	if !sess.client.IsConnected() {
+		return "", domain.ErrSessionNotConnected
+	}
+	jid := wmtypes.NewJID(req.Phone, wmtypes.DefaultUserServer)
+
+	var contacts []*waProto.ContactMessage
+	for _, phone := range req.Contacts {
+		normalized := strings.TrimSpace(phone)
+		if !strings.HasPrefix(normalized, "+") {
+			normalized = "+" + normalized
+		}
+		vcard := fmt.Sprintf("BEGIN:VCARD\nVERSION:3.0\nFN:%s\nTEL;type=CELL;type=VOICE;waid=%s:%s\nEND:VCARD",
+			normalized, strings.TrimPrefix(normalized, "+"), normalized)
+		contacts = append(contacts, &waProto.ContactMessage{
+			DisplayName: proto.String(normalized),
+			Vcard:       proto.String(vcard),
+		})
+	}
+	if len(contacts) == 0 {
+		return "", fmt.Errorf("%w: no valid contacts", domain.ErrBadRequest)
+	}
+
+	var msg *waProto.Message
+	if len(contacts) == 1 {
+		msg = &waProto.Message{ContactMessage: contacts[0]}
+	} else {
+		msg = &waProto.Message{
+			ContactsArrayMessage: &waProto.ContactsArrayMessage{
+				Contacts: contacts,
+			},
+		}
+	}
+	resp, err := sess.client.SendMessage(ctx, jid, msg)
+	if err != nil {
+		return "", fmt.Errorf("send contact card: %w", err)
+	}
+	return resp.ID, nil
+}
+
+func (m *Manager) SendSticker(ctx context.Context, tenantID, instanceID string, req domain.SendMediaMessageRequest) (string, error) {
+	sess, err := m.ensureSession(ctx, tenantID, instanceID)
+	if err != nil {
+		return "", err
+	}
+	if !sess.client.IsConnected() {
+		return "", domain.ErrSessionNotConnected
+	}
+	if len(req.Data) == 0 {
+		return "", fmt.Errorf("%w: sticker payload is empty", domain.ErrBadRequest)
+	}
+	jid := wmtypes.NewJID(req.Phone, wmtypes.DefaultUserServer)
+	upload, err := sess.client.Upload(ctx, req.Data, whatsmeow.MediaImage)
+	if err != nil {
+		return "", fmt.Errorf("upload sticker: %w", err)
+	}
+	msg := &waProto.Message{
+		StickerMessage: &waProto.StickerMessage{
+			Mimetype:      proto.String("image/webp"),
+			URL:           proto.String(upload.URL),
+			DirectPath:    proto.String(upload.DirectPath),
+			MediaKey:      upload.MediaKey,
+			FileEncSHA256: upload.FileEncSHA256,
+			FileSHA256:    upload.FileSHA256,
+			FileLength:    proto.Uint64(upload.FileLength),
+			IsAnimated:    proto.Bool(false),
+		},
+	}
+	resp, err := sess.client.SendMessage(ctx, jid, msg)
+	if err != nil {
+		return "", fmt.Errorf("send sticker: %w", err)
+	}
+	return resp.ID, nil
+}
+
+func (m *Manager) ReactToMessage(ctx context.Context, tenantID, instanceID string, req domain.ReactMessageRequest) error {
+	sess, err := m.ensureSession(ctx, tenantID, instanceID)
+	if err != nil {
+		return err
+	}
+	if !sess.client.IsConnected() {
+		return domain.ErrSessionNotConnected
+	}
+	jid := wmtypes.NewJID(req.Phone, wmtypes.DefaultUserServer)
+	msgKey := &waCommon.MessageKey{
+		RemoteJID: proto.String(jid.String()),
+		ID:        proto.String(req.MessageID),
+	}
+	msg := &waProto.Message{
+		ReactionMessage: &waProto.ReactionMessage{
+			Key:               msgKey,
+			Text:              proto.String(req.Emoji),
+			SenderTimestampMS: proto.Int64(time.Now().UnixMilli()),
+		},
+	}
+	_, err = sess.client.SendMessage(ctx, jid, msg)
+	return err
+}
+
+func (m *Manager) DeleteMessage(ctx context.Context, tenantID, instanceID string, req domain.DeleteMessageRequest) error {
+	sess, err := m.ensureSession(ctx, tenantID, instanceID)
+	if err != nil {
+		return err
+	}
+	if !sess.client.IsConnected() {
+		return domain.ErrSessionNotConnected
+	}
+	jid := wmtypes.NewJID(req.Phone, wmtypes.DefaultUserServer)
+	_, err = sess.client.SendMessage(ctx, jid, sess.client.BuildRevoke(jid, wmtypes.EmptyJID, wmtypes.MessageID(req.MessageID)))
+	return err
+}
+
+func (m *Manager) SendQuotedMessage(ctx context.Context, tenantID, instanceID string, req domain.QuotedSendRequest) (string, error) {
+	sess, err := m.ensureSession(ctx, tenantID, instanceID)
+	if err != nil {
+		return "", err
+	}
+	if !sess.client.IsConnected() {
+		return "", domain.ErrSessionNotConnected
+	}
+	jid := wmtypes.NewJID(req.Phone, wmtypes.DefaultUserServer)
+	msg := &waProto.Message{
+		ExtendedTextMessage: &waProto.ExtendedTextMessage{
+			Text: proto.String(req.Message),
+			ContextInfo: &waProto.ContextInfo{
+				QuotedMessage: &waProto.Message{Conversation: proto.String("")},
+				StanzaID:      proto.String(req.QuotedMessageID),
+				Participant:   proto.String(jid.String()),
+			},
+		},
+	}
+	resp, err := sess.client.SendMessage(ctx, jid, msg)
+	if err != nil {
+		return "", fmt.Errorf("send quoted: %w", err)
+	}
+	return resp.ID, nil
+}
+
+func (m *Manager) GetGroupInfo(ctx context.Context, tenantID, instanceID, groupJID string) (*domain.Group, error) {
+	sess, err := m.ensureSession(ctx, tenantID, instanceID)
+	if err != nil {
+		return nil, err
+	}
+	if !sess.client.IsConnected() {
+		return nil, domain.ErrSessionNotConnected
+	}
+	jid, err := wmtypes.ParseJID(groupJID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid group jid", domain.ErrBadRequest)
+	}
+	info, err := sess.client.GetGroupInfo(ctx, jid)
+	if err != nil {
+		return nil, fmt.Errorf("get group info: %w", err)
+	}
+	return groupInfoToDomain(info), nil
+}
+
+func (m *Manager) CreateGroup(ctx context.Context, tenantID, instanceID string, req domain.CreateGroupRequest) (*domain.Group, error) {
+	sess, err := m.ensureSession(ctx, tenantID, instanceID)
+	if err != nil {
+		return nil, err
+	}
+	if !sess.client.IsConnected() {
+		return nil, domain.ErrSessionNotConnected
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		return nil, fmt.Errorf("%w: group name is required", domain.ErrBadRequest)
+	}
+	participants := make([]wmtypes.JID, 0, len(req.Participants))
+	for _, phone := range req.Participants {
+		phone = strings.TrimSpace(phone)
+		if phone == "" {
+			continue
+		}
+		participants = append(participants, wmtypes.NewJID(phone, wmtypes.DefaultUserServer))
+	}
+	info, err := sess.client.CreateGroup(ctx, whatsmeow.ReqCreateGroup{
+		Name:         req.Name,
+		Participants: participants,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create group: %w", err)
+	}
+	return groupInfoToDomain(info), nil
+}
+
+func (m *Manager) UpdateGroupParticipants(ctx context.Context, tenantID, instanceID string, req domain.UpdateGroupParticipantsRequest) error {
+	sess, err := m.ensureSession(ctx, tenantID, instanceID)
+	if err != nil {
+		return err
+	}
+	if !sess.client.IsConnected() {
+		return domain.ErrSessionNotConnected
+	}
+	groupJID, err := wmtypes.ParseJID(req.GroupJID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid group jid", domain.ErrBadRequest)
+	}
+	participants := make([]wmtypes.JID, 0, len(req.Participants))
+	for _, phone := range req.Participants {
+		phone = strings.TrimSpace(phone)
+		if phone != "" {
+			participants = append(participants, wmtypes.NewJID(phone, wmtypes.DefaultUserServer))
+		}
+	}
+	var action whatsmeow.ParticipantChange
+	switch req.Action {
+	case "add":
+		action = whatsmeow.ParticipantChangeAdd
+	case "remove":
+		action = whatsmeow.ParticipantChangeRemove
+	case "promote":
+		action = whatsmeow.ParticipantChangePromote
+	case "demote":
+		action = whatsmeow.ParticipantChangeDemote
+	default:
+		return fmt.Errorf("%w: action must be add, remove, promote or demote", domain.ErrBadRequest)
+	}
+	_, err = sess.client.UpdateGroupParticipants(ctx, groupJID, participants, action)
+	return err
+}
+
+func (m *Manager) UpdateGroupInfo(ctx context.Context, tenantID, instanceID string, req domain.UpdateGroupInfoRequest) error {
+	sess, err := m.ensureSession(ctx, tenantID, instanceID)
+	if err != nil {
+		return err
+	}
+	if !sess.client.IsConnected() {
+		return domain.ErrSessionNotConnected
+	}
+	groupJID, err := wmtypes.ParseJID(req.GroupJID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid group jid", domain.ErrBadRequest)
+	}
+	if req.Name != "" {
+		if err := sess.client.SetGroupName(ctx, groupJID, req.Name); err != nil {
+			return fmt.Errorf("set group name: %w", err)
+		}
+	}
+	if req.Description != "" {
+		if err := sess.client.SetGroupTopic(ctx, groupJID, "", "", req.Description); err != nil {
+			return fmt.Errorf("set group description: %w", err)
+		}
+	}
+	return nil
+}
+
+func (m *Manager) GetGroupInviteLink(ctx context.Context, tenantID, instanceID, groupJID string) (*domain.GroupInviteLink, error) {
+	sess, err := m.ensureSession(ctx, tenantID, instanceID)
+	if err != nil {
+		return nil, err
+	}
+	if !sess.client.IsConnected() {
+		return nil, domain.ErrSessionNotConnected
+	}
+	jid, err := wmtypes.ParseJID(groupJID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid group jid", domain.ErrBadRequest)
+	}
+	link, err := sess.client.GetGroupInviteLink(ctx, jid, false)
+	if err != nil {
+		return nil, fmt.Errorf("get invite link: %w", err)
+	}
+	return &domain.GroupInviteLink{GroupJID: groupJID, InviteLink: link}, nil
+}
+
+func (m *Manager) LeaveGroup(ctx context.Context, tenantID, instanceID, groupJID string) error {
+	sess, err := m.ensureSession(ctx, tenantID, instanceID)
+	if err != nil {
+		return err
+	}
+	if !sess.client.IsConnected() {
+		return domain.ErrSessionNotConnected
+	}
+	jid, err := wmtypes.ParseJID(groupJID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid group jid", domain.ErrBadRequest)
+	}
+	return sess.client.LeaveGroup(ctx, jid)
+}
+
+func (m *Manager) BlockContact(ctx context.Context, tenantID, instanceID, phone string) error {
+	sess, err := m.ensureSession(ctx, tenantID, instanceID)
+	if err != nil {
+		return err
+	}
+	if !sess.client.IsConnected() {
+		return domain.ErrSessionNotConnected
+	}
+	jid := wmtypes.NewJID(phone, wmtypes.DefaultUserServer)
+	_, err = sess.client.UpdateBlocklist(ctx, jid, wmevents.BlocklistChangeActionBlock)
+	return err
+}
+
+func (m *Manager) UnblockContact(ctx context.Context, tenantID, instanceID, phone string) error {
+	sess, err := m.ensureSession(ctx, tenantID, instanceID)
+	if err != nil {
+		return err
+	}
+	if !sess.client.IsConnected() {
+		return domain.ErrSessionNotConnected
+	}
+	jid := wmtypes.NewJID(phone, wmtypes.DefaultUserServer)
+	_, err = sess.client.UpdateBlocklist(ctx, jid, wmevents.BlocklistChangeActionUnblock)
+	return err
+}
+
+func (m *Manager) GetContactAvatar(ctx context.Context, tenantID, instanceID, phone string) (*domain.ContactAvatar, error) {
+	sess, err := m.ensureSession(ctx, tenantID, instanceID)
+	if err != nil {
+		return nil, err
+	}
+	if !sess.client.IsConnected() {
+		return nil, domain.ErrSessionNotConnected
+	}
+	jid := wmtypes.NewJID(phone, wmtypes.DefaultUserServer)
+	pic, err := sess.client.GetProfilePictureInfo(ctx, jid, &whatsmeow.GetProfilePictureParams{Preview: false})
+	if err != nil {
+		return &domain.ContactAvatar{Phone: phone}, nil
+	}
+	url := ""
+	if pic != nil {
+		url = pic.URL
+	}
+	return &domain.ContactAvatar{Phone: phone, URL: url}, nil
+}
+
+func (m *Manager) GetProfile(ctx context.Context, tenantID, instanceID string) (*domain.InstanceProfile, error) {
+	sess, err := m.ensureSession(ctx, tenantID, instanceID)
+	if err != nil {
+		return nil, err
+	}
+	profile := &domain.InstanceProfile{
+		InstanceID: instanceID,
+		Phone:      sess.phone,
+	}
+	if !sess.client.IsConnected() || sess.client.Store.ID == nil {
+		return profile, nil
+	}
+	selfJID := *sess.client.Store.ID
+	// PushName is stored locally in the device store
+	if selfJID.User != "" {
+		contacts, _ := sess.client.Store.Contacts.GetAllContacts(ctx)
+		if info, ok := contacts[selfJID]; ok {
+			profile.Name = info.PushName
+			if profile.Name == "" {
+				profile.Name = info.FullName
+			}
+		}
+	}
+	pic, picErr := sess.client.GetProfilePictureInfo(ctx, selfJID, &whatsmeow.GetProfilePictureParams{Preview: false})
+	if picErr == nil && pic != nil {
+		profile.PictureURL = pic.URL
+	}
+	return profile, nil
+}
+
+func (m *Manager) UpdateProfile(ctx context.Context, tenantID, instanceID string, req domain.UpdateProfileRequest) error {
+	sess, err := m.ensureSession(ctx, tenantID, instanceID)
+	if err != nil {
+		return err
+	}
+	if !sess.client.IsConnected() {
+		return domain.ErrSessionNotConnected
+	}
+	if req.Description != "" {
+		if err := sess.client.SetStatusMessage(ctx, req.Description); err != nil {
+			return fmt.Errorf("set status message: %w", err)
+		}
+	}
+	return nil
+}
+
+func (m *Manager) GetPrivacySettings(ctx context.Context, tenantID, instanceID string) (*domain.PrivacySettings, error) {
+	sess, err := m.ensureSession(ctx, tenantID, instanceID)
+	if err != nil {
+		return nil, err
+	}
+	if !sess.client.IsConnected() {
+		return nil, domain.ErrSessionNotConnected
+	}
+	ps := sess.client.GetPrivacySettings(ctx)
+	return &domain.PrivacySettings{
+		LastSeen:     string(ps.LastSeen),
+		ProfilePhoto: string(ps.Profile),
+		Status:       string(ps.Status),
+		ReadReceipts: ps.ReadReceipts == wmtypes.PrivacySettingAll,
+		GroupAdd:     string(ps.GroupAdd),
+	}, nil
+}
+
+func (m *Manager) UpdatePrivacySettings(ctx context.Context, tenantID, instanceID string, req domain.UpdatePrivacyRequest) error {
+	sess, err := m.ensureSession(ctx, tenantID, instanceID)
+	if err != nil {
+		return err
+	}
+	if !sess.client.IsConnected() {
+		return domain.ErrSessionNotConnected
+	}
+	if req.LastSeen != "" {
+		if _, err := sess.client.SetPrivacySetting(ctx, wmtypes.PrivacySettingTypeLastSeen, wmtypes.PrivacySetting(req.LastSeen)); err != nil {
+			return fmt.Errorf("set last seen: %w", err)
+		}
+	}
+	if req.ProfilePhoto != "" {
+		if _, err := sess.client.SetPrivacySetting(ctx, wmtypes.PrivacySettingTypeProfile, wmtypes.PrivacySetting(req.ProfilePhoto)); err != nil {
+			return fmt.Errorf("set profile photo: %w", err)
+		}
+	}
+	if req.Status != "" {
+		if _, err := sess.client.SetPrivacySetting(ctx, wmtypes.PrivacySettingTypeStatus, wmtypes.PrivacySetting(req.Status)); err != nil {
+			return fmt.Errorf("set status: %w", err)
+		}
+	}
+	if req.GroupAdd != "" {
+		if _, err := sess.client.SetPrivacySetting(ctx, wmtypes.PrivacySettingTypeGroupAdd, wmtypes.PrivacySetting(req.GroupAdd)); err != nil {
+			return fmt.Errorf("set group add: %w", err)
+		}
+	}
+	if req.ReadReceipts != nil {
+		setting := wmtypes.PrivacySettingNone
+		if *req.ReadReceipts {
+			setting = wmtypes.PrivacySettingAll
+		}
+		if _, err := sess.client.SetPrivacySetting(ctx, wmtypes.PrivacySettingTypeReadReceipts, setting); err != nil {
+			return fmt.Errorf("set read receipts: %w", err)
+		}
+	}
+	return nil
+}
+
+// ─── Chat Operations ─────────────────────────────────────────────────────────
+
+func (m *Manager) ArchiveChat(ctx context.Context, tenantID, instanceID string, req domain.ArchiveChatRequest) error {
+	sess, err := m.ensureSession(ctx, tenantID, instanceID)
+	if err != nil {
+		return err
+	}
+	if !sess.client.IsConnected() {
+		return domain.ErrSessionNotConnected
+	}
+	jid, err := wmtypes.ParseJID(req.Phone + "@s.whatsapp.net")
+	if err != nil {
+		return fmt.Errorf("invalid phone: %w", err)
+	}
+	return sess.client.SendAppState(ctx, wmappstate.BuildArchive(jid, req.Archive, time.Now(), nil))
+}
+
+func (m *Manager) MuteChat(ctx context.Context, tenantID, instanceID string, req domain.MuteChatRequest) error {
+	sess, err := m.ensureSession(ctx, tenantID, instanceID)
+	if err != nil {
+		return err
+	}
+	if !sess.client.IsConnected() {
+		return domain.ErrSessionNotConnected
+	}
+	jid, err := wmtypes.ParseJID(req.Phone + "@s.whatsapp.net")
+	if err != nil {
+		return fmt.Errorf("invalid phone: %w", err)
+	}
+	duration := time.Duration(0)
+	if req.Mute && req.DurationHours > 0 {
+		duration = time.Duration(req.DurationHours) * time.Hour
+	}
+	return sess.client.SendAppState(ctx, wmappstate.BuildMute(jid, req.Mute, duration))
+}
+
+func (m *Manager) PinChat(ctx context.Context, tenantID, instanceID string, req domain.PinChatRequest) error {
+	sess, err := m.ensureSession(ctx, tenantID, instanceID)
+	if err != nil {
+		return err
+	}
+	if !sess.client.IsConnected() {
+		return domain.ErrSessionNotConnected
+	}
+	jid, err := wmtypes.ParseJID(req.Phone + "@s.whatsapp.net")
+	if err != nil {
+		return fmt.Errorf("invalid phone: %w", err)
+	}
+	return sess.client.SendAppState(ctx, wmappstate.BuildPin(jid, req.Pin))
+}
+
+func (m *Manager) MarkChatRead(ctx context.Context, tenantID, instanceID string, req domain.MarkChatReadRequest) error {
+	sess, err := m.ensureSession(ctx, tenantID, instanceID)
+	if err != nil {
+		return err
+	}
+	if !sess.client.IsConnected() {
+		return domain.ErrSessionNotConnected
+	}
+	jid, err := wmtypes.ParseJID(req.Phone + "@s.whatsapp.net")
+	if err != nil {
+		return fmt.Errorf("invalid phone: %w", err)
+	}
+	var msgKey *waCommon.MessageKey
+	if req.LastMessageID != "" {
+		msgKey = &waCommon.MessageKey{ID: proto.String(req.LastMessageID)}
+	}
+	patch := wmappstate.BuildMarkChatAsRead(jid, req.Read, time.Now(), msgKey)
+	if err := sess.client.SendAppState(ctx, patch); err != nil {
+		return err
+	}
+	if req.Read && req.LastMessageID != "" {
+		_ = sess.client.MarkRead(ctx, []wmtypes.MessageID{wmtypes.MessageID(req.LastMessageID)}, time.Now(), jid, wmtypes.EmptyJID)
+	}
+	return nil
+}
+
+// ─── Message Operations ──────────────────────────────────────────────────────
+
+func (m *Manager) EditMessage(ctx context.Context, tenantID, instanceID string, req domain.EditMessageRequest) error {
+	sess, err := m.ensureSession(ctx, tenantID, instanceID)
+	if err != nil {
+		return err
+	}
+	if !sess.client.IsConnected() {
+		return domain.ErrSessionNotConnected
+	}
+	jid, err := wmtypes.ParseJID(req.Phone + "@s.whatsapp.net")
+	if err != nil {
+		return fmt.Errorf("invalid phone: %w", err)
+	}
+	newContent := &waProto.Message{Conversation: proto.String(req.NewMessage)}
+	editMsg := sess.client.BuildEdit(jid, wmtypes.MessageID(req.MessageID), newContent)
+	_, err = sess.client.SendMessage(ctx, jid, editMsg)
+	return err
+}
+
+func (m *Manager) ForwardMessage(ctx context.Context, tenantID, instanceID string, req domain.ForwardMessageRequest) (string, error) {
+	sess, err := m.ensureSession(ctx, tenantID, instanceID)
+	if err != nil {
+		return "", err
+	}
+	if !sess.client.IsConnected() {
+		return "", domain.ErrSessionNotConnected
+	}
+	jid, err := wmtypes.ParseJID(req.Phone + "@s.whatsapp.net")
+	if err != nil {
+		return "", fmt.Errorf("invalid phone: %w", err)
+	}
+	isForwarded := true
+	score := uint32(1)
+	msg := &waProto.Message{
+		ExtendedTextMessage: &waProto.ExtendedTextMessage{
+			Text: proto.String(req.Message),
+			ContextInfo: &waProto.ContextInfo{
+				IsForwarded:    &isForwarded,
+				ForwardingScore: &score,
+			},
+		},
+	}
+	resp, err := sess.client.SendMessage(ctx, jid, msg)
+	if err != nil {
+		return "", err
+	}
+	return resp.ID, nil
+}
+
+func (m *Manager) StarMessage(ctx context.Context, tenantID, instanceID string, req domain.StarMessageRequest) error {
+	sess, err := m.ensureSession(ctx, tenantID, instanceID)
+	if err != nil {
+		return err
+	}
+	if !sess.client.IsConnected() {
+		return domain.ErrSessionNotConnected
+	}
+	jid, err := wmtypes.ParseJID(req.Phone + "@s.whatsapp.net")
+	if err != nil {
+		return fmt.Errorf("invalid phone: %w", err)
+	}
+	patch := wmappstate.BuildStar(jid, wmtypes.EmptyJID, wmtypes.MessageID(req.MessageID), req.FromMe, req.Starred)
+	return sess.client.SendAppState(ctx, patch)
+}
+
+// ─── Instance Operations ─────────────────────────────────────────────────────
+
+func (m *Manager) PairPhone(ctx context.Context, tenantID, instanceID, phone string) (string, error) {
+	sess, err := m.ensureSession(ctx, tenantID, instanceID)
+	if err != nil {
+		return "", err
+	}
+	if sess.client.IsConnected() && sess.client.IsLoggedIn() {
+		return "", fmt.Errorf("already connected")
+	}
+	if !sess.client.IsConnected() {
+		if err := sess.client.Connect(); err != nil {
+			return "", fmt.Errorf("connect for pairing: %w", err)
+		}
+	}
+	code, err := sess.client.PairPhone(ctx, phone, true, whatsmeow.PairClientChrome, "Chrome (Linux)")
+	if err != nil {
+		return "", fmt.Errorf("pair phone: %w", err)
+	}
+	return code, nil
+}
+
+func (m *Manager) RestartInstance(ctx context.Context, tenantID, instanceID string) error {
+	sess, err := m.ensureSession(ctx, tenantID, instanceID)
+	if err != nil {
+		return err
+	}
+	if sess.client.IsConnected() {
+		sess.client.Disconnect()
+	}
+	if err := sess.client.Connect(); err != nil {
+		return fmt.Errorf("reconnect: %w", err)
+	}
+	return nil
+}
+
+func groupInfoToDomain(info *wmtypes.GroupInfo) *domain.Group {
+	if info == nil {
+		return nil
+	}
+	count := info.ParticipantCount
+	participants := make([]domain.GroupParticipant, 0, len(info.Participants))
+	for _, p := range info.Participants {
+		participants = append(participants, domain.GroupParticipant{
+			JID:          p.JID.String(),
+			Phone:        p.JID.User,
+			IsAdmin:      p.IsAdmin,
+			IsSuperAdmin: p.IsSuperAdmin,
+		})
+	}
+	if count == 0 {
+		count = len(info.Participants)
+	}
+	return &domain.Group{
+		JID:              info.JID.String(),
+		Name:             info.Name,
+		Topic:            info.Topic,
+		ParticipantCount: count,
+		IsAnnounce:       info.IsAnnounce,
+		IsLocked:         info.IsLocked,
+		CreatedAt:        info.GroupCreated,
+		Participants:     participants,
 	}
 }
 

@@ -119,6 +119,10 @@ func (f *fakeWhatsAppService) GetStatus(ctx context.Context, tenantID, instanceI
 	return f.status
 }
 
+func (f *fakeWhatsAppService) ListContacts(ctx context.Context, tenantID, instanceID string) ([]domain.WAContact, error) {
+	return []domain.WAContact{}, nil
+}
+
 func TestRouterBootstrapAndSendMessageFlow(t *testing.T) {
 	db := testutil.OpenTestDB(t)
 	server := newIntegrationServer(t, db)
@@ -187,7 +191,7 @@ func TestRouterResolveContactsAndSendBulk(t *testing.T) {
 
 	var contacts []domain.ResolvedContact
 	requestJSON(t, server, nil, http.MethodPost, "/contacts/resolve", bootstrapResp.APIKey.APIKey, map[string][]string{
-		"phones": []string{"(11) 94566-0620", "5511000000000"},
+		"phones": {"(11) 94566-0620", "5511000000000"},
 	}, http.StatusOK, &contacts)
 	if len(contacts) != 2 {
 		t.Fatalf("expected 2 contacts, got %d", len(contacts))

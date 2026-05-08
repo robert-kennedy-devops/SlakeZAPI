@@ -3,24 +3,35 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
+  Ban,
   Cable,
   CirclePlay,
   Copy,
+  Edit2,
   FileCode2,
   Files,
+  Forward,
   LayoutList,
   KeyRound,
+  Link,
   LoaderCircle,
   LogOut,
+  MapPin,
+  MessageSquare,
   MessageSquareShare,
   MessagesSquare,
   RadioTower,
   PlugZap,
   RefreshCcw,
   Send,
+  Settings,
   ShieldCheck,
+  Smile,
   Smartphone,
   SquareMousePointer,
+  Star,
+  Trash2,
+  UserPlus,
   UsersRound,
   Webhook,
 } from "lucide-react";
@@ -160,6 +171,30 @@ export function DashboardClient() {
   const [lastSecret, setLastSecret] = useState("");
   const [flash, setFlash] = useState("");
   const [isPending, startTransition] = useTransition();
+
+  // ── New feature state ──────────────────────────────────────────────────────
+  const [locationForm, setLocationForm] = useState({ phone: "", latitude: "", longitude: "", name: "", address: "" });
+  const [contactCardForm, setContactCardForm] = useState({ phone: "", contacts: "" });
+  const [stickerForm, setStickerForm] = useState({ phone: "", url: "" });
+  const [quotedForm, setQuotedForm] = useState({ phone: "", message: "", quoted_message_id: "" });
+  const [reactForm, setReactForm] = useState({ phone: "", message_id: "", emoji: "👍" });
+  const [deleteForm, setDeleteForm] = useState({ phone: "", message_id: "", for_everyone: true });
+  const [profileDescForm, setProfileDescForm] = useState("");
+  const [privacyForm, setPrivacyForm] = useState<{ last_seen: string; profile_photo: string; status: string; read_receipts: boolean; group_add: string }>({ last_seen: "contacts", profile_photo: "contacts", status: "contacts", read_receipts: true, group_add: "contacts" });
+  const [privacyLoaded, setPrivacyLoaded] = useState(false);
+  const [createGroupForm, setCreateGroupForm] = useState({ name: "", participants: "" });
+  const [groupParticipantsForm, setGroupParticipantsForm] = useState({ jid: "", participants: "", action: "add" as "add" | "remove" | "promote" | "demote" });
+  const [groupInfoForm, setGroupInfoForm] = useState({ jid: "", name: "", description: "" });
+  const [leaveGroupJID, setLeaveGroupJID] = useState("");
+  const [inviteLinkJID, setInviteLinkJID] = useState("");
+  const [inviteLink, setInviteLink] = useState("");
+  const [blockPhone, setBlockPhone] = useState("");
+  const [chatForm, setChatForm] = useState({ phone: "", action: "archive" as "archive" | "unarchive" | "mute" | "unmute" | "pin" | "unpin" | "read" | "unread", mute_hours: "8" });
+  const [editForm, setEditForm] = useState({ phone: "", message_id: "", new_message: "" });
+  const [forwardForm, setForwardForm] = useState({ phone: "", message: "" });
+  const [starForm, setStarForm] = useState({ phone: "", message_id: "", starred: true, from_me: true });
+  const [pairPhoneForm, setPairPhoneForm] = useState({ phone: "" });
+  const [pairCode, setPairCode] = useState("");
 
   useEffect(() => {
     const authToken = getAuthToken();
@@ -613,6 +648,161 @@ export function DashboardClient() {
       });
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.me });
     },
+    onError: handleMutationError,
+  });
+
+  const profileQuery = useQuery({
+    queryKey: ["profile", tenantHeader, instanceHeader],
+    queryFn: () => api.whatsappProfile(token, tenantHeader, instanceHeader),
+    enabled: !!token && !!tenantHeader,
+  });
+
+  const privacyQuery = useQuery({
+    queryKey: ["privacy", tenantHeader, instanceHeader],
+    queryFn: () => api.privacySettings(token, tenantHeader, instanceHeader),
+    enabled: !!token && !!tenantHeader,
+  });
+
+  useEffect(() => {
+    if (privacyQuery.data && !privacyLoaded) {
+      const d = privacyQuery.data;
+      setPrivacyForm({ last_seen: d.last_seen, profile_photo: d.profile_photo, status: d.status, read_receipts: d.read_receipts, group_add: d.group_add });
+      setPrivacyLoaded(true);
+    }
+  }, [privacyQuery.data, privacyLoaded]);
+
+  const sendLocation = useMutation({
+    mutationFn: () => api.sendLocation(token, tenantHeader, instanceHeader, { phone: locationForm.phone, latitude: parseFloat(locationForm.latitude), longitude: parseFloat(locationForm.longitude), name: locationForm.name, address: locationForm.address }),
+    onSuccess: () => { setLocationForm({ phone: "", latitude: "", longitude: "", name: "", address: "" }); notify("Localização enviada."); },
+    onError: handleMutationError,
+  });
+
+  const sendContactCard = useMutation({
+    mutationFn: () => api.sendContactCard(token, tenantHeader, instanceHeader, { phone: contactCardForm.phone, contacts: contactCardForm.contacts.split(",").map(p => p.trim()).filter(Boolean) }),
+    onSuccess: () => { setContactCardForm({ phone: "", contacts: "" }); notify("Contato(s) enviado(s)."); },
+    onError: handleMutationError,
+  });
+
+  const sendSticker = useMutation({
+    mutationFn: () => api.sendSticker(token, tenantHeader, instanceHeader, { phone: stickerForm.phone, url: stickerForm.url }),
+    onSuccess: () => { setStickerForm({ phone: "", url: "" }); notify("Sticker enviado."); },
+    onError: handleMutationError,
+  });
+
+  const sendQuoted = useMutation({
+    mutationFn: () => api.sendQuoted(token, tenantHeader, instanceHeader, { phone: quotedForm.phone, message: quotedForm.message, quoted_message_id: quotedForm.quoted_message_id }),
+    onSuccess: () => { setQuotedForm({ phone: "", message: "", quoted_message_id: "" }); notify("Resposta enviada."); },
+    onError: handleMutationError,
+  });
+
+  const reactToMessage = useMutation({
+    mutationFn: () => api.reactToMessage(token, tenantHeader, instanceHeader, { phone: reactForm.phone, message_id: reactForm.message_id, emoji: reactForm.emoji }),
+    onSuccess: () => { setReactForm({ phone: "", message_id: "", emoji: "👍" }); notify("Reação enviada."); },
+    onError: handleMutationError,
+  });
+
+  const deleteMessage = useMutation({
+    mutationFn: () => api.deleteMessage(token, tenantHeader, instanceHeader, { phone: deleteForm.phone, message_id: deleteForm.message_id, for_everyone: deleteForm.for_everyone }),
+    onSuccess: () => { setDeleteForm({ phone: "", message_id: "", for_everyone: true }); notify("Mensagem apagada."); },
+    onError: handleMutationError,
+  });
+
+  const updateProfile = useMutation({
+    mutationFn: () => api.updateWhatsappProfile(token, tenantHeader, instanceHeader, { description: profileDescForm }),
+    onSuccess: () => { notify("Perfil atualizado."); queryClient.invalidateQueries({ queryKey: ["profile", tenantHeader, instanceHeader] }); },
+    onError: handleMutationError,
+  });
+
+  const updatePrivacy = useMutation({
+    mutationFn: () => api.updatePrivacySettings(token, tenantHeader, instanceHeader, privacyForm),
+    onSuccess: () => { notify("Privacidade atualizada."); queryClient.invalidateQueries({ queryKey: ["privacy", tenantHeader, instanceHeader] }); },
+    onError: handleMutationError,
+  });
+
+  const createGroup = useMutation({
+    mutationFn: () => api.createGroup(token, tenantHeader, instanceHeader, { name: createGroupForm.name, participants: createGroupForm.participants.split(",").map(p => p.trim()).filter(Boolean) }),
+    onSuccess: () => { setCreateGroupForm({ name: "", participants: "" }); notify("Grupo criado."); queryClient.invalidateQueries({ queryKey: QUERY_KEYS.groups(tenantHeader, instanceHeader) }); },
+    onError: handleMutationError,
+  });
+
+  const updateGroupParticipants = useMutation({
+    mutationFn: () => api.updateGroupParticipants(token, tenantHeader, instanceHeader, groupParticipantsForm.jid, { participants: groupParticipantsForm.participants.split(",").map(p => p.trim()).filter(Boolean), action: groupParticipantsForm.action }),
+    onSuccess: () => { setGroupParticipantsForm({ jid: "", participants: "", action: "add" }); notify("Participantes atualizados."); },
+    onError: handleMutationError,
+  });
+
+  const updateGroupInfo = useMutation({
+    mutationFn: () => api.updateGroupInfo(token, tenantHeader, instanceHeader, groupInfoForm.jid, { name: groupInfoForm.name || undefined, description: groupInfoForm.description || undefined }),
+    onSuccess: () => { setGroupInfoForm({ jid: "", name: "", description: "" }); notify("Grupo atualizado."); queryClient.invalidateQueries({ queryKey: QUERY_KEYS.groups(tenantHeader, instanceHeader) }); },
+    onError: handleMutationError,
+  });
+
+  const leaveGroup = useMutation({
+    mutationFn: () => api.leaveGroup(token, tenantHeader, instanceHeader, leaveGroupJID),
+    onSuccess: () => { setLeaveGroupJID(""); notify("Saiu do grupo."); queryClient.invalidateQueries({ queryKey: QUERY_KEYS.groups(tenantHeader, instanceHeader) }); },
+    onError: handleMutationError,
+  });
+
+  const fetchInviteLink = useMutation({
+    mutationFn: () => api.groupInviteLink(token, tenantHeader, instanceHeader, inviteLinkJID),
+    onSuccess: (data) => { setInviteLink(data.invite_link); notify("Link de convite obtido."); },
+    onError: handleMutationError,
+  });
+
+  const blockContact = useMutation({
+    mutationFn: (action: "block" | "unblock") =>
+      action === "block"
+        ? api.blockContact(token, tenantHeader, instanceHeader, blockPhone)
+        : api.unblockContact(token, tenantHeader, instanceHeader, blockPhone),
+    onSuccess: (_, action) => { setBlockPhone(""); notify(action === "block" ? "Contato bloqueado." : "Contato desbloqueado."); },
+    onError: handleMutationError,
+  });
+
+  const chatAction = useMutation({
+    mutationFn: () => {
+      const phone = chatForm.phone;
+      switch (chatForm.action) {
+        case "archive": return api.archiveChat(token, tenantHeader, phone, { phone, archive: true });
+        case "unarchive": return api.archiveChat(token, tenantHeader, phone, { phone, archive: false });
+        case "mute": return api.muteChat(token, tenantHeader, phone, { phone, mute: true, duration_hours: parseInt(chatForm.mute_hours) || 0 });
+        case "unmute": return api.muteChat(token, tenantHeader, phone, { phone, mute: false });
+        case "pin": return api.pinChat(token, tenantHeader, phone, { phone, pin: true });
+        case "unpin": return api.pinChat(token, tenantHeader, phone, { phone, pin: false });
+        case "read": return api.markChatRead(token, tenantHeader, phone, { phone, read: true });
+        case "unread": return api.markChatRead(token, tenantHeader, phone, { phone, read: false });
+      }
+    },
+    onSuccess: () => { notify("Acao de chat aplicada."); },
+    onError: handleMutationError,
+  });
+
+  const editMessage = useMutation({
+    mutationFn: () => api.editMessage(token, tenantHeader, editForm),
+    onSuccess: () => { setEditForm({ phone: "", message_id: "", new_message: "" }); notify("Mensagem editada."); },
+    onError: handleMutationError,
+  });
+
+  const forwardMessage = useMutation({
+    mutationFn: () => api.forwardMessage(token, tenantHeader, forwardForm),
+    onSuccess: () => { setForwardForm({ phone: "", message: "" }); notify("Mensagem encaminhada."); },
+    onError: handleMutationError,
+  });
+
+  const starMessage = useMutation({
+    mutationFn: () => api.starMessage(token, tenantHeader, starForm),
+    onSuccess: () => { notify(starForm.starred ? "Mensagem marcada com estrela." : "Estrela removida."); },
+    onError: handleMutationError,
+  });
+
+  const pairPhone = useMutation({
+    mutationFn: () => api.pairPhone(token, tenantHeader, { phone: pairPhoneForm.phone }),
+    onSuccess: (data) => { setPairCode(data.code); notify("Codigo de pareamento gerado!"); },
+    onError: handleMutationError,
+  });
+
+  const restartInstance = useMutation({
+    mutationFn: () => api.restartInstance(token, tenantHeader),
+    onSuccess: () => { invalidateTenant(tenantHeader, instanceHeader, queryClient); notify("Instancia reiniciada."); },
     onError: handleMutationError,
   });
 
@@ -2269,6 +2459,421 @@ export function DashboardClient() {
                   <EmptyState label="Sem membros adicionais neste workspace." />
                 )}
               </div>
+            </FormPanel>
+          </div>
+        </section>
+
+        {/* ── Novos tipos de mensagem ───────────────────────────────────── */}
+        <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+          <div className="grid gap-6">
+            <div className="panel p-6">
+              <p className="panel-title">Envio Avancado</p>
+              <h2 className="mt-2 text-xl font-semibold text-white">Localização, Contatos, Sticker e Respostas</h2>
+            </div>
+
+            <div className="grid gap-6 lg:grid-cols-2">
+              <FormPanel
+                title="Enviar Localizacao"
+                icon={<MapPin className="h-4 w-4" />}
+                action={
+                  <button className="button-primary" disabled={sendLocation.isPending || !locationForm.phone || !locationForm.latitude || !locationForm.longitude} onClick={() => sendLocation.mutate()} type="button">
+                    Enviar
+                  </button>
+                }
+              >
+                <input className="input" placeholder="Telefone (DDI+numero)" value={locationForm.phone} onChange={(e) => setLocationForm(f => ({ ...f, phone: e.target.value }))} />
+                <div className="grid grid-cols-2 gap-3">
+                  <input className="input" placeholder="Latitude ex: -23.5505" value={locationForm.latitude} onChange={(e) => setLocationForm(f => ({ ...f, latitude: e.target.value }))} />
+                  <input className="input" placeholder="Longitude ex: -46.6333" value={locationForm.longitude} onChange={(e) => setLocationForm(f => ({ ...f, longitude: e.target.value }))} />
+                </div>
+                <input className="input" placeholder="Nome do local (opcional)" value={locationForm.name} onChange={(e) => setLocationForm(f => ({ ...f, name: e.target.value }))} />
+                <input className="input" placeholder="Endereco (opcional)" value={locationForm.address} onChange={(e) => setLocationForm(f => ({ ...f, address: e.target.value }))} />
+              </FormPanel>
+
+              <FormPanel
+                title="Enviar Cartao de Contato"
+                icon={<UserPlus className="h-4 w-4" />}
+                action={
+                  <button className="button-primary" disabled={sendContactCard.isPending || !contactCardForm.phone || !contactCardForm.contacts} onClick={() => sendContactCard.mutate()} type="button">
+                    Enviar
+                  </button>
+                }
+              >
+                <input className="input" placeholder="Telefone destinatario (DDI+numero)" value={contactCardForm.phone} onChange={(e) => setContactCardForm(f => ({ ...f, phone: e.target.value }))} />
+                <textarea className="input min-h-24 py-3" placeholder={"Contatos a compartilhar (separados por virgula):\n5511999990001, 5511999990002"} value={contactCardForm.contacts} onChange={(e) => setContactCardForm(f => ({ ...f, contacts: e.target.value }))} />
+              </FormPanel>
+
+              <FormPanel
+                title="Enviar Sticker (WebP)"
+                icon={<Smile className="h-4 w-4" />}
+                action={
+                  <button className="button-primary" disabled={sendSticker.isPending || !stickerForm.phone || !stickerForm.url} onClick={() => sendSticker.mutate()} type="button">
+                    Enviar
+                  </button>
+                }
+              >
+                <input className="input" placeholder="Telefone (DDI+numero)" value={stickerForm.phone} onChange={(e) => setStickerForm(f => ({ ...f, phone: e.target.value }))} />
+                <input className="input" placeholder="URL do arquivo .webp" value={stickerForm.url} onChange={(e) => setStickerForm(f => ({ ...f, url: e.target.value }))} />
+              </FormPanel>
+
+              <FormPanel
+                title="Responder Mensagem"
+                icon={<MessageSquareShare className="h-4 w-4" />}
+                action={
+                  <button className="button-primary" disabled={sendQuoted.isPending || !quotedForm.phone || !quotedForm.message || !quotedForm.quoted_message_id} onClick={() => sendQuoted.mutate()} type="button">
+                    Responder
+                  </button>
+                }
+              >
+                <input className="input" placeholder="Telefone (DDI+numero)" value={quotedForm.phone} onChange={(e) => setQuotedForm(f => ({ ...f, phone: e.target.value }))} />
+                <input className="input" placeholder="ID da mensagem original (WhatsApp ID)" value={quotedForm.quoted_message_id} onChange={(e) => setQuotedForm(f => ({ ...f, quoted_message_id: e.target.value }))} />
+                <textarea className="input min-h-24 py-3" placeholder="Sua resposta..." value={quotedForm.message} onChange={(e) => setQuotedForm(f => ({ ...f, message: e.target.value }))} />
+              </FormPanel>
+
+              <FormPanel
+                title="Reagir a Mensagem"
+                icon={<Smile className="h-4 w-4" />}
+                action={
+                  <button className="button-primary" disabled={reactToMessage.isPending || !reactForm.phone || !reactForm.message_id} onClick={() => reactToMessage.mutate()} type="button">
+                    Reagir
+                  </button>
+                }
+              >
+                <input className="input" placeholder="Telefone (DDI+numero)" value={reactForm.phone} onChange={(e) => setReactForm(f => ({ ...f, phone: e.target.value }))} />
+                <input className="input" placeholder="ID da mensagem (WhatsApp ID)" value={reactForm.message_id} onChange={(e) => setReactForm(f => ({ ...f, message_id: e.target.value }))} />
+                <div className="flex gap-2 flex-wrap">
+                  {["👍","❤️","😂","😮","😢","🙏","🔥","🎉","👏","✅"].map(emoji => (
+                    <button key={emoji} type="button" className={`text-xl px-2 py-1 rounded-xl border transition-colors ${reactForm.emoji === emoji ? "border-glow bg-glow/20" : "border-white/10 bg-white/5 hover:border-white/30"}`} onClick={() => setReactForm(f => ({ ...f, emoji }))}>
+                      {emoji}
+                    </button>
+                  ))}
+                  <input className="input flex-1 min-w-20" placeholder="Outro emoji" value={reactForm.emoji} onChange={(e) => setReactForm(f => ({ ...f, emoji: e.target.value }))} />
+                </div>
+              </FormPanel>
+
+              <FormPanel
+                title="Apagar Mensagem"
+                icon={<Trash2 className="h-4 w-4" />}
+                action={
+                  <button className="button-danger" disabled={deleteMessage.isPending || !deleteForm.phone || !deleteForm.message_id} onClick={() => deleteMessage.mutate()} type="button">
+                    Apagar
+                  </button>
+                }
+              >
+                <input className="input" placeholder="Telefone (DDI+numero)" value={deleteForm.phone} onChange={(e) => setDeleteForm(f => ({ ...f, phone: e.target.value }))} />
+                <input className="input" placeholder="ID da mensagem (WhatsApp ID)" value={deleteForm.message_id} onChange={(e) => setDeleteForm(f => ({ ...f, message_id: e.target.value }))} />
+                <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+                  <input type="checkbox" checked={deleteForm.for_everyone} onChange={(e) => setDeleteForm(f => ({ ...f, for_everyone: e.target.checked }))} className="rounded" />
+                  Apagar para todos (revoke)
+                </label>
+              </FormPanel>
+            </div>
+          </div>
+
+          {/* ── Gerenciamento de Grupos ──────────────────────────────────── */}
+          <div className="grid gap-6">
+            <div className="panel p-6">
+              <p className="panel-title">Gerenciamento de Grupos</p>
+              <h2 className="mt-2 text-xl font-semibold text-white">Criar, editar e administrar grupos</h2>
+            </div>
+
+            <FormPanel
+              title="Criar Grupo"
+              icon={<UsersRound className="h-4 w-4" />}
+              action={
+                <button className="button-primary" disabled={createGroup.isPending || !createGroupForm.name} onClick={() => createGroup.mutate()} type="button">
+                  Criar
+                </button>
+              }
+            >
+              <input className="input" placeholder="Nome do grupo" value={createGroupForm.name} onChange={(e) => setCreateGroupForm(f => ({ ...f, name: e.target.value }))} />
+              <textarea className="input min-h-24 py-3" placeholder={"Participantes (DDI+numero, separados por virgula):\n5511999990001, 5511999990002"} value={createGroupForm.participants} onChange={(e) => setCreateGroupForm(f => ({ ...f, participants: e.target.value }))} />
+            </FormPanel>
+
+            <FormPanel
+              title="Gerenciar Participantes"
+              icon={<UserPlus className="h-4 w-4" />}
+              action={
+                <button className="button-primary" disabled={updateGroupParticipants.isPending || !groupParticipantsForm.jid || !groupParticipantsForm.participants} onClick={() => updateGroupParticipants.mutate()} type="button">
+                  Aplicar
+                </button>
+              }
+            >
+              <input className="input" placeholder="JID do grupo (ex: 12345@g.us)" value={groupParticipantsForm.jid} onChange={(e) => setGroupParticipantsForm(f => ({ ...f, jid: e.target.value }))} />
+              <select className="input" value={groupParticipantsForm.action} onChange={(e) => setGroupParticipantsForm(f => ({ ...f, action: e.target.value as "add" | "remove" | "promote" | "demote" }))}>
+                <option value="add">Adicionar</option>
+                <option value="remove">Remover</option>
+                <option value="promote">Promover a admin</option>
+                <option value="demote">Rebaixar admin</option>
+              </select>
+              <textarea className="input min-h-20 py-3" placeholder={"Telefones (DDI+numero, separados por virgula):\n5511999990001, 5511999990002"} value={groupParticipantsForm.participants} onChange={(e) => setGroupParticipantsForm(f => ({ ...f, participants: e.target.value }))} />
+            </FormPanel>
+
+            <FormPanel
+              title="Editar Informacoes do Grupo"
+              icon={<Settings className="h-4 w-4" />}
+              action={
+                <button className="button-primary" disabled={updateGroupInfo.isPending || !groupInfoForm.jid} onClick={() => updateGroupInfo.mutate()} type="button">
+                  Salvar
+                </button>
+              }
+            >
+              <input className="input" placeholder="JID do grupo (ex: 12345@g.us)" value={groupInfoForm.jid} onChange={(e) => setGroupInfoForm(f => ({ ...f, jid: e.target.value }))} />
+              <input className="input" placeholder="Novo nome (opcional)" value={groupInfoForm.name} onChange={(e) => setGroupInfoForm(f => ({ ...f, name: e.target.value }))} />
+              <textarea className="input min-h-20 py-3" placeholder="Nova descricao (opcional)" value={groupInfoForm.description} onChange={(e) => setGroupInfoForm(f => ({ ...f, description: e.target.value }))} />
+            </FormPanel>
+
+            <FormPanel
+              title="Link de Convite"
+              icon={<Link className="h-4 w-4" />}
+              action={
+                <button className="button-secondary" disabled={fetchInviteLink.isPending || !inviteLinkJID} onClick={() => fetchInviteLink.mutate()} type="button">
+                  Obter Link
+                </button>
+              }
+            >
+              <input className="input" placeholder="JID do grupo (ex: 12345@g.us)" value={inviteLinkJID} onChange={(e) => setInviteLinkJID(e.target.value)} />
+              {inviteLink ? (
+                <div className="rounded-xl border border-white/10 bg-slate-900/60 p-3 text-sm break-all">
+                  <span className="text-slate-400">Link: </span>
+                  <a href={inviteLink} target="_blank" rel="noopener noreferrer" className="text-glow hover:underline">{inviteLink}</a>
+                </div>
+              ) : null}
+            </FormPanel>
+
+            <FormPanel
+              title="Sair do Grupo"
+              icon={<Ban className="h-4 w-4" />}
+              action={
+                <button className="button-danger" disabled={leaveGroup.isPending || !leaveGroupJID} onClick={() => leaveGroup.mutate()} type="button">
+                  Sair
+                </button>
+              }
+            >
+              <input className="input" placeholder="JID do grupo (ex: 12345@g.us)" value={leaveGroupJID} onChange={(e) => setLeaveGroupJID(e.target.value)} />
+            </FormPanel>
+          </div>
+        </section>
+
+        {/* ── Perfil, Privacidade e Contatos ───────────────────────────── */}
+        <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+          <div className="grid gap-6">
+            <div className="panel p-6">
+              <p className="panel-title">Perfil e Privacidade</p>
+              <h2 className="mt-2 text-xl font-semibold text-white">Configuracoes da conta WhatsApp</h2>
+            </div>
+
+            <div className="grid gap-6 lg:grid-cols-2">
+              <FormPanel
+                title="Perfil Atual"
+                icon={<Smartphone className="h-4 w-4" />}
+                action={null}
+              >
+                {profileQuery.data ? (
+                  <div className="space-y-3">
+                    {profileQuery.data.picture_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={profileQuery.data.picture_url} alt="Avatar" className="h-16 w-16 rounded-full border border-white/20 object-cover" />
+                    ) : null}
+                    <dl className="space-y-3 text-sm text-slate-300">
+                      <div className="flex justify-between gap-4"><dt>Numero</dt><dd>{profileQuery.data.phone || "-"}</dd></div>
+                      <div className="flex justify-between gap-4"><dt>Nome</dt><dd>{profileQuery.data.name || "-"}</dd></div>
+                    </dl>
+                  </div>
+                ) : <EmptyState label="Conecte-se ao WhatsApp para ver o perfil." />}
+              </FormPanel>
+
+              <FormPanel
+                title="Atualizar Descricao"
+                icon={<Settings className="h-4 w-4" />}
+                action={
+                  <button className="button-primary" disabled={updateProfile.isPending} onClick={() => updateProfile.mutate()} type="button">
+                    Salvar
+                  </button>
+                }
+              >
+                <textarea className="input min-h-24 py-3" placeholder="Nova descricao / status do perfil" value={profileDescForm} onChange={(e) => setProfileDescForm(e.target.value)} />
+              </FormPanel>
+            </div>
+
+            <FormPanel
+              title="Configuracoes de Privacidade"
+              icon={<ShieldCheck className="h-4 w-4" />}
+              action={
+                <button className="button-primary" disabled={updatePrivacy.isPending} onClick={() => updatePrivacy.mutate()} type="button">
+                  Salvar
+                </button>
+              }
+            >
+              {privacyQuery.isLoading ? <EmptyState label="Carregando configuracoes..." /> : (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {(["last_seen", "profile_photo", "status", "group_add"] as const).map((key) => (
+                    <div key={key} className="flex flex-col gap-1">
+                      <label className="text-xs uppercase tracking-wider text-slate-400">{({ last_seen: "Visto por ultimo", profile_photo: "Foto de perfil", status: "Recado", group_add: "Adicionar em grupos" } as Record<string, string>)[key]}</label>
+                      <select className="input" value={privacyForm[key]} onChange={(e) => setPrivacyForm(f => ({ ...f, [key]: e.target.value }))}>
+                        <option value="all">Todos</option>
+                        <option value="contacts">Contatos</option>
+                        <option value="none">Ninguem</option>
+                      </select>
+                    </div>
+                  ))}
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs uppercase tracking-wider text-slate-400">Confirmacao de Leitura</label>
+                    <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer mt-2">
+                      <input type="checkbox" checked={privacyForm.read_receipts} onChange={(e) => setPrivacyForm(f => ({ ...f, read_receipts: e.target.checked }))} className="rounded" />
+                      Ativo (mostrar duplo check azul)
+                    </label>
+                  </div>
+                </div>
+              )}
+            </FormPanel>
+          </div>
+
+          {/* ── Bloquear / Desbloquear Contatos ─────────────────────────── */}
+          <div className="grid gap-6">
+            <div className="panel p-6">
+              <p className="panel-title">Controle de Contatos</p>
+              <h2 className="mt-2 text-xl font-semibold text-white">Bloquear e desbloquear numeros</h2>
+            </div>
+
+            <FormPanel
+              title="Bloquear / Desbloquear"
+              icon={<Ban className="h-4 w-4" />}
+              action={
+                <div className="flex gap-2">
+                  <button className="button-danger" disabled={blockContact.isPending || !blockPhone} onClick={() => blockContact.mutate("block")} type="button">
+                    Bloquear
+                  </button>
+                  <button className="button-secondary" disabled={blockContact.isPending || !blockPhone} onClick={() => blockContact.mutate("unblock")} type="button">
+                    Desbloquear
+                  </button>
+                </div>
+              }
+            >
+              <input className="input" placeholder="Telefone (DDI+numero)" value={blockPhone} onChange={(e) => setBlockPhone(e.target.value)} />
+              <p className="text-xs text-slate-500">O numero continuara aparecendo no historico local, mas nao podera enviar mensagens.</p>
+            </FormPanel>
+          </div>
+        </section>
+
+        {/* ── Chat, Editar/Encaminhar/Estrela e Instancia ──────────────── */}
+        <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+          <div className="grid gap-6">
+            <div className="panel p-6">
+              <p className="panel-title">Gestao de Chats e Mensagens</p>
+              <h2 className="mt-2 text-xl font-semibold text-white">Arquivar, silenciar, fixar, editar e encaminhar</h2>
+            </div>
+
+            {/* Chat Actions */}
+            <FormPanel
+              title="Acoes de Chat"
+              icon={<MessageSquare className="h-4 w-4" />}
+              action={
+                <button className="button-primary" disabled={chatAction.isPending || !chatForm.phone} onClick={() => chatAction.mutate()} type="button">
+                  Aplicar
+                </button>
+              }
+            >
+              <input className="input" placeholder="Telefone (DDI+numero)" value={chatForm.phone} onChange={(e) => setChatForm(f => ({ ...f, phone: e.target.value }))} />
+              <select className="input" value={chatForm.action} onChange={(e) => setChatForm(f => ({ ...f, action: e.target.value as typeof chatForm.action }))}>
+                <option value="archive">Arquivar chat</option>
+                <option value="unarchive">Desarquivar chat</option>
+                <option value="mute">Silenciar chat</option>
+                <option value="unmute">Dessilenciar chat</option>
+                <option value="pin">Fixar chat</option>
+                <option value="unpin">Desfixar chat</option>
+                <option value="read">Marcar como lido</option>
+                <option value="unread">Marcar como nao lido</option>
+              </select>
+              {chatForm.action === "mute" && (
+                <div className="flex gap-2 items-center">
+                  <label className="text-xs text-slate-400 whitespace-nowrap">Duracao (horas, 0 = sempre):</label>
+                  <input className="input w-24" type="number" min="0" value={chatForm.mute_hours} onChange={(e) => setChatForm(f => ({ ...f, mute_hours: e.target.value }))} />
+                </div>
+              )}
+            </FormPanel>
+
+            {/* Edit Message */}
+            <FormPanel
+              title="Editar Mensagem"
+              icon={<Edit2 className="h-4 w-4" />}
+              action={
+                <button className="button-primary" disabled={editMessage.isPending || !editForm.phone || !editForm.message_id || !editForm.new_message} onClick={() => editMessage.mutate()} type="button">
+                  Editar
+                </button>
+              }
+            >
+              <input className="input" placeholder="Telefone (DDI+numero)" value={editForm.phone} onChange={(e) => setEditForm(f => ({ ...f, phone: e.target.value }))} />
+              <input className="input" placeholder="ID da mensagem (message_id)" value={editForm.message_id} onChange={(e) => setEditForm(f => ({ ...f, message_id: e.target.value }))} />
+              <textarea className="input min-h-20 py-3" placeholder="Novo texto da mensagem" value={editForm.new_message} onChange={(e) => setEditForm(f => ({ ...f, new_message: e.target.value }))} />
+            </FormPanel>
+          </div>
+
+          <div className="grid gap-6">
+            <div className="panel p-6">
+              <p className="panel-title">Encaminhar, Estrelar e Instancia</p>
+              <h2 className="mt-2 text-xl font-semibold text-white">Operacoes avancadas</h2>
+            </div>
+
+            {/* Forward Message */}
+            <FormPanel
+              title="Encaminhar Mensagem"
+              icon={<Forward className="h-4 w-4" />}
+              action={
+                <button className="button-primary" disabled={forwardMessage.isPending || !forwardForm.phone || !forwardForm.message} onClick={() => forwardMessage.mutate()} type="button">
+                  Encaminhar
+                </button>
+              }
+            >
+              <input className="input" placeholder="Telefone destino (DDI+numero)" value={forwardForm.phone} onChange={(e) => setForwardForm(f => ({ ...f, phone: e.target.value }))} />
+              <textarea className="input min-h-20 py-3" placeholder="Texto a encaminhar" value={forwardForm.message} onChange={(e) => setForwardForm(f => ({ ...f, message: e.target.value }))} />
+            </FormPanel>
+
+            {/* Star Message */}
+            <FormPanel
+              title="Marcar Mensagem com Estrela"
+              icon={<Star className="h-4 w-4" />}
+              action={
+                <button className="button-primary" disabled={starMessage.isPending || !starForm.phone || !starForm.message_id} onClick={() => starMessage.mutate()} type="button">
+                  {starForm.starred ? "Marcar ★" : "Desmarcar ★"}
+                </button>
+              }
+            >
+              <input className="input" placeholder="Telefone (DDI+numero)" value={starForm.phone} onChange={(e) => setStarForm(f => ({ ...f, phone: e.target.value }))} />
+              <input className="input" placeholder="ID da mensagem" value={starForm.message_id} onChange={(e) => setStarForm(f => ({ ...f, message_id: e.target.value }))} />
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+                  <input type="checkbox" checked={starForm.starred} onChange={(e) => setStarForm(f => ({ ...f, starred: e.target.checked }))} />
+                  Marcar com estrela
+                </label>
+                <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+                  <input type="checkbox" checked={starForm.from_me} onChange={(e) => setStarForm(f => ({ ...f, from_me: e.target.checked }))} />
+                  Mensagem enviada por mim
+                </label>
+              </div>
+            </FormPanel>
+
+            {/* Pair Phone / Restart */}
+            <FormPanel
+              title="Parear por Codigo de Telefone"
+              icon={<Smartphone className="h-4 w-4" />}
+              action={
+                <button className="button-primary" disabled={pairPhone.isPending || !pairPhoneForm.phone} onClick={() => pairPhone.mutate()} type="button">
+                  Gerar Codigo
+                </button>
+              }
+            >
+              <input className="input" placeholder="Seu numero WhatsApp (ex: 5511999999999)" value={pairPhoneForm.phone} onChange={(e) => setPairPhoneForm({ phone: e.target.value })} />
+              {pairCode && (
+                <div className="rounded-xl border border-emerald-500/40 bg-emerald-900/20 p-4">
+                  <p className="text-xs text-slate-400 mb-1">Codigo de pareamento (valido por 160s):</p>
+                  <p className="text-2xl font-mono font-bold tracking-[0.3em] text-emerald-400">{pairCode}</p>
+                  <p className="text-xs text-slate-500 mt-2">Abra WhatsApp &gt; Dispositivos conectados &gt; Conectar dispositivo &gt; Conectar via numero de telefone</p>
+                </div>
+              )}
+              <button className="button-secondary w-full mt-2" disabled={restartInstance.isPending} onClick={() => restartInstance.mutate()} type="button">
+                Reiniciar Instancia
+              </button>
             </FormPanel>
           </div>
         </section>

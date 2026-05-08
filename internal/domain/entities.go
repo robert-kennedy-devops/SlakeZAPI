@@ -233,13 +233,101 @@ type QueueRequeueResponse struct {
 }
 
 type Group struct {
-	JID              string    `json:"jid"`
-	Name             string    `json:"name"`
-	Topic            string    `json:"topic,omitempty"`
-	ParticipantCount int       `json:"participant_count"`
-	IsAnnounce       bool      `json:"is_announce"`
-	IsLocked         bool      `json:"is_locked"`
-	CreatedAt        time.Time `json:"created_at"`
+	JID              string             `json:"jid"`
+	Name             string             `json:"name"`
+	Topic            string             `json:"topic,omitempty"`
+	ParticipantCount int                `json:"participant_count"`
+	IsAnnounce       bool               `json:"is_announce"`
+	IsLocked         bool               `json:"is_locked"`
+	CreatedAt        time.Time          `json:"created_at"`
+	Participants     []GroupParticipant `json:"participants,omitempty"`
+}
+
+type GroupParticipant struct {
+	JID         string `json:"jid"`
+	Phone       string `json:"phone"`
+	IsAdmin     bool   `json:"is_admin"`
+	IsSuperAdmin bool  `json:"is_super_admin"`
+}
+
+type CreateGroupRequest struct {
+	InstanceID   string   `json:"instance_id,omitempty"`
+	Name         string   `json:"name"`
+	Participants []string `json:"participants"`
+}
+
+type UpdateGroupParticipantsRequest struct {
+	InstanceID   string   `json:"instance_id,omitempty"`
+	GroupJID     string   `json:"group_jid"`
+	Participants []string `json:"participants"`
+	Action       string   `json:"action"` // add, remove, promote, demote
+}
+
+type UpdateGroupInfoRequest struct {
+	InstanceID  string `json:"instance_id,omitempty"`
+	GroupJID    string `json:"group_jid"`
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+type GroupInviteLink struct {
+	GroupJID   string `json:"group_jid"`
+	InviteLink string `json:"invite_link"`
+}
+
+type LeaveGroupRequest struct {
+	InstanceID string `json:"instance_id,omitempty"`
+	GroupJID   string `json:"group_jid"`
+}
+
+type InstanceProfile struct {
+	InstanceID  string `json:"instance_id"`
+	Phone       string `json:"phone,omitempty"`
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
+	PictureURL  string `json:"picture_url,omitempty"`
+}
+
+type UpdateProfileRequest struct {
+	InstanceID  string `json:"instance_id,omitempty"`
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
+	PictureURL  string `json:"picture_url,omitempty"`
+}
+
+type PrivacySettings struct {
+	LastSeen     string `json:"last_seen"`     // all, contacts, nobody
+	ProfilePhoto string `json:"profile_photo"` // all, contacts, nobody
+	Status       string `json:"status"`        // all, contacts, nobody
+	ReadReceipts bool   `json:"read_receipts"`
+	GroupAdd     string `json:"group_add"` // all, contacts, admins
+}
+
+type UpdatePrivacyRequest struct {
+	InstanceID   string `json:"instance_id,omitempty"`
+	LastSeen     string `json:"last_seen,omitempty"`
+	ProfilePhoto string `json:"profile_photo,omitempty"`
+	Status       string `json:"status,omitempty"`
+	ReadReceipts *bool  `json:"read_receipts,omitempty"`
+	GroupAdd     string `json:"group_add,omitempty"`
+}
+
+type BlockContactRequest struct {
+	InstanceID string `json:"instance_id,omitempty"`
+	Phone      string `json:"phone"`
+}
+
+type ContactAvatar struct {
+	Phone string `json:"phone"`
+	URL   string `json:"url,omitempty"`
+}
+
+type InstanceConfigRequest struct {
+	InstanceID        string  `json:"instance_id,omitempty"`
+	AutoReadMessages  *bool   `json:"auto_read_messages,omitempty"`
+	AutoReadStatus    *bool   `json:"auto_read_status,omitempty"`
+	AutoRejectCalls   *bool   `json:"auto_reject_calls,omitempty"`
+	RejectCallMessage string  `json:"reject_call_message,omitempty"`
 }
 
 type WAContact struct {
@@ -395,6 +483,42 @@ type GroupMessageRequest struct {
 	InstanceID string `json:"instance_id,omitempty"`
 	GroupJID   string `json:"group_jid"`
 	Message    string `json:"message"`
+}
+
+type LocationMessageRequest struct {
+	InstanceID string  `json:"instance_id,omitempty"`
+	Phone      string  `json:"phone"`
+	Latitude   float64 `json:"latitude"`
+	Longitude  float64 `json:"longitude"`
+	Name       string  `json:"name,omitempty"`
+	Address    string  `json:"address,omitempty"`
+}
+
+type ContactCardRequest struct {
+	InstanceID string   `json:"instance_id,omitempty"`
+	Phone      string   `json:"phone"`
+	Contacts   []string `json:"contacts"`
+}
+
+type ReactMessageRequest struct {
+	InstanceID string `json:"instance_id,omitempty"`
+	Phone      string `json:"phone"`
+	MessageID  string `json:"message_id"`
+	Emoji      string `json:"emoji"`
+}
+
+type DeleteMessageRequest struct {
+	InstanceID string `json:"instance_id,omitempty"`
+	Phone      string `json:"phone"`
+	MessageID  string `json:"message_id"`
+	ForEveryone bool  `json:"for_everyone"`
+}
+
+type QuotedSendRequest struct {
+	InstanceID      string `json:"instance_id,omitempty"`
+	Phone           string `json:"phone"`
+	Message         string `json:"message"`
+	QuotedMessageID string `json:"quoted_message_id"`
 }
 
 type StatusMessageRequest struct {
@@ -631,4 +755,66 @@ type CreateCampaignRequest struct {
 
 type UpdateCampaignStatusRequest struct {
 	Status CampaignStatus `json:"status"`
+}
+
+// ─── Chat Operations ─────────────────────────────────────────────────────────
+
+type ArchiveChatRequest struct {
+	InstanceID string `json:"instance_id,omitempty"`
+	Phone      string `json:"phone"`
+	Archive    bool   `json:"archive"`
+}
+
+type MuteChatRequest struct {
+	InstanceID    string `json:"instance_id,omitempty"`
+	Phone         string `json:"phone"`
+	Mute          bool   `json:"mute"`
+	DurationHours int    `json:"duration_hours,omitempty"` // 0 = forever when muting
+}
+
+type PinChatRequest struct {
+	InstanceID string `json:"instance_id,omitempty"`
+	Phone      string `json:"phone"`
+	Pin        bool   `json:"pin"`
+}
+
+type MarkChatReadRequest struct {
+	InstanceID    string `json:"instance_id,omitempty"`
+	Phone         string `json:"phone"`
+	Read          bool   `json:"read"`
+	LastMessageID string `json:"last_message_id,omitempty"`
+}
+
+// ─── Message Operations ──────────────────────────────────────────────────────
+
+type EditMessageRequest struct {
+	InstanceID string `json:"instance_id,omitempty"`
+	Phone      string `json:"phone"`
+	MessageID  string `json:"message_id"`
+	NewMessage string `json:"new_message"`
+}
+
+type ForwardMessageRequest struct {
+	InstanceID string `json:"instance_id,omitempty"`
+	Phone      string `json:"phone"`
+	Message    string `json:"message"`
+}
+
+type StarMessageRequest struct {
+	InstanceID string `json:"instance_id,omitempty"`
+	Phone      string `json:"phone"`
+	MessageID  string `json:"message_id"`
+	Starred    bool   `json:"starred"`
+	FromMe     bool   `json:"from_me"`
+}
+
+// ─── Instance Operations ─────────────────────────────────────────────────────
+
+type PairPhoneRequest struct {
+	InstanceID string `json:"instance_id,omitempty"`
+	Phone      string `json:"phone"`
+}
+
+type PairPhoneResponse struct {
+	Code string `json:"code"`
 }

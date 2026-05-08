@@ -9,6 +9,11 @@ Estado atual do projeto:
 - campanhas imediatas e agendadas
 - inbox operacional por conversa
 - envio de texto, mídia, grupos, status e mensagens interativas
+- **localização, cartão de contato, sticker, resposta citada, reação, edição e encaminhamento de mensagens**
+- **gerenciamento completo de grupos** (criar, participantes, info, link de convite, sair)
+- **operações de chat** (arquivar, silenciar, fixar, marcar como lido/não lido)
+- **perfil e privacidade** (foto, descrição, visto por último, recibos, bloquear contatos)
+- **pareamento por código de telefone** (sem QR) e reinício de instância
 - webhooks, WebSocket, fila observável e docs OpenAPI/Postman
 
 ---
@@ -174,19 +179,48 @@ Arquivos servidos pela própria API:
 | `GET` | `/whatsapp/qr.png` | PNG do QR code atual |
 | `POST` | `/whatsapp/disconnect` | Desconectar sessão WhatsApp |
 | `POST` | `/whatsapp/logout` | Desparear a sessão do WhatsApp |
+| `POST` | `/whatsapp/pair-phone` | Parear por código de telefone (sem QR) |
+| `POST` | `/whatsapp/restart` | Reiniciar instância WhatsApp |
+| `GET` | `/whatsapp/profile` | Obter perfil da instância conectada |
+| `PATCH` | `/whatsapp/profile` | Atualizar descrição do perfil |
+| `GET` | `/whatsapp/privacy` | Consultar configurações de privacidade |
+| `PATCH` | `/whatsapp/privacy` | Atualizar configurações de privacidade |
 | `POST` | `/messages/send` | Enviar mensagem de texto |
 | `POST` | `/messages/send-bulk` | Enviar mensagem em massa para vários números |
 | `POST` | `/messages/send-media` | Enviar imagem, video, audio ou documento por URL |
 | `POST` | `/messages/send-interactive` | Enviar botões, lista ou enquete |
-| `POST` | `/messages/send-group` | Enviar mensagem para um grupo |
+| `POST` | `/messages/send-group` | Enviar mensagem para um ou mais grupos |
+| `POST` | `/messages/send-location` | Enviar localização geográfica |
+| `POST` | `/messages/send-contact` | Enviar cartão de contato (vCard) |
+| `POST` | `/messages/send-sticker` | Enviar sticker por URL |
+| `POST` | `/messages/send-quoted` | Enviar mensagem com citação |
+| `POST` | `/messages/react` | Reagir a uma mensagem com emoji |
+| `POST` | `/messages/delete` | Apagar mensagem enviada |
+| `POST` | `/messages/edit` | Editar texto de uma mensagem enviada |
+| `POST` | `/messages/forward` | Encaminhar mensagem com flag de encaminhamento |
+| `POST` | `/messages/star` | Marcar/desmarcar mensagem com estrela |
+| `GET` | `/messages` | Listar mensagens do tenant |
+| `GET` | `/messages/{id}` | Consultar uma mensagem específica |
+| `GET` | `/messages/{id}/media` | Baixar o binário de uma mídia recebida |
 | `POST` | `/status/post` | Publicar texto ou mídia no status |
 | `POST` | `/contacts/resolve` | Reconhecer quais números existem no WhatsApp |
-| `GET` | `/messages` | Listar mensagens do tenant |
+| `GET` | `/contacts` | Listar contatos importados da instância |
+| `POST` | `/contacts/{phone}/block` | Bloquear contato |
+| `DELETE` | `/contacts/{phone}/block` | Desbloquear contato |
+| `GET` | `/contacts/{phone}/avatar` | Obter foto de perfil de um contato |
+| `POST` | `/chats/{phone}/archive` | Arquivar ou desarquivar conversa |
+| `POST` | `/chats/{phone}/mute` | Silenciar ou dessilenciar conversa |
+| `POST` | `/chats/{phone}/pin` | Fixar ou desafixar conversa |
+| `POST` | `/chats/{phone}/read` | Marcar conversa como lida ou não lida |
 | `GET` | `/conversations` | Listar conversas operacionais por instância |
 | `POST` | `/conversations/{phone}` | Atualizar estado e nota de uma conversa |
 | `GET` | `/groups` | Listar grupos da instância conectada |
-| `GET` | `/messages/{id}` | Consultar uma mensagem específica |
-| `GET` | `/messages/{id}/media` | Baixar o binário de uma mídia recebida |
+| `POST` | `/groups` | Criar novo grupo |
+| `GET` | `/groups/{jid}` | Obter informações de um grupo |
+| `PATCH` | `/groups/{jid}` | Editar nome ou descrição do grupo |
+| `POST` | `/groups/{jid}/participants` | Adicionar, remover, promover ou rebaixar participantes |
+| `GET` | `/groups/{jid}/invite` | Obter link de convite do grupo |
+| `POST` | `/groups/{jid}/leave` | Sair do grupo |
 | `POST` | `/webhook` | Registrar URL de webhook |
 | `GET` | `/webhook` | Listar webhooks ativos |
 | `DELETE` | `/webhook/{id}` | Desativar webhook |
@@ -214,17 +248,48 @@ Arquivos servidos pela própria API:
 | `POST` | `/app/messages/send-media` | Enviar mídia usando sessão de usuário |
 | `POST` | `/app/messages/send-interactive` | Enviar botões, lista ou enquete no dashboard |
 | `POST` | `/app/messages/send-group` | Enviar mensagem para grupo no dashboard |
+| `POST` | `/app/messages/send-location` | Enviar localização no dashboard |
+| `POST` | `/app/messages/send-contact` | Enviar cartão de contato no dashboard |
+| `POST` | `/app/messages/send-sticker` | Enviar sticker no dashboard |
+| `POST` | `/app/messages/send-quoted` | Enviar resposta citada no dashboard |
+| `POST` | `/app/messages/react` | Reagir a mensagem no dashboard |
+| `POST` | `/app/messages/delete` | Apagar mensagem no dashboard |
+| `POST` | `/app/messages/edit` | Editar mensagem no dashboard |
+| `POST` | `/app/messages/forward` | Encaminhar mensagem no dashboard |
+| `POST` | `/app/messages/star` | Estrelar/desestrellar mensagem no dashboard |
 | `POST` | `/app/status/post` | Publicar status usando sessão de usuário |
 | `POST` | `/app/contacts/resolve` | Reconhecer contatos válidos para envio |
+| `GET` | `/app/contacts` | Listar contatos importados no dashboard |
+| `POST` | `/app/contacts/{phone}/block` | Bloquear contato no dashboard |
+| `DELETE` | `/app/contacts/{phone}/block` | Desbloquear contato no dashboard |
+| `GET` | `/app/contacts/{phone}/avatar` | Foto de perfil de contato no dashboard |
+| `POST` | `/app/chats/{phone}/archive` | Arquivar/desarquivar chat no dashboard |
+| `POST` | `/app/chats/{phone}/mute` | Silenciar/dessilenciar chat no dashboard |
+| `POST` | `/app/chats/{phone}/pin` | Fixar/desafixar chat no dashboard |
+| `POST` | `/app/chats/{phone}/read` | Marcar chat como lido/não lido no dashboard |
 | `GET` | `/app/conversations` | Inbox operacional por conversa |
 | `POST` | `/app/conversations/{phone}` | Atualizar estado/nota da conversa |
 | `GET` | `/app/groups` | Listar grupos no dashboard |
+| `POST` | `/app/groups` | Criar grupo no dashboard |
+| `GET` | `/app/groups/{jid}` | Obter info do grupo no dashboard |
+| `PATCH` | `/app/groups/{jid}` | Editar grupo no dashboard |
+| `POST` | `/app/groups/{jid}/participants` | Gerenciar participantes no dashboard |
+| `GET` | `/app/groups/{jid}/invite` | Link de convite no dashboard |
+| `POST` | `/app/groups/{jid}/leave` | Sair do grupo no dashboard |
+| `GET` | `/app/whatsapp/profile` | Perfil da instância no dashboard |
+| `PATCH` | `/app/whatsapp/profile` | Atualizar perfil no dashboard |
+| `GET` | `/app/whatsapp/privacy` | Privacidade no dashboard |
+| `PATCH` | `/app/whatsapp/privacy` | Atualizar privacidade no dashboard |
+| `POST` | `/app/whatsapp/pair-phone` | Parear por código no dashboard |
+| `POST` | `/app/whatsapp/restart` | Reiniciar instância no dashboard |
 | `GET` | `/app/webhooks` | Listar webhooks no dashboard |
 | `POST` | `/app/webhooks` | Criar webhook no dashboard |
+| `DELETE` | `/app/webhooks/{id}` | Remover webhook no dashboard |
 | `GET` | `/app/webhooks/deliveries` | Histórico de entregas no dashboard |
 | `POST` | `/app/webhooks/deliveries/{id}/replay` | Replay manual de entrega |
 | `GET` | `/app/apikeys` | Listar API keys no dashboard |
 | `POST` | `/app/apikeys` | Criar API key no dashboard |
+| `DELETE` | `/app/apikeys/{id}` | Revogar API key no dashboard |
 | `GET` | `/app/ws` | WebSocket do dashboard |
 | `GET` | `/app/instances` | Listar instancias no dashboard |
 | `POST` | `/app/instances` | Criar instancia no dashboard |
@@ -235,6 +300,7 @@ Arquivos servidos pela própria API:
 | `GET` | `/app/queue/dead-letters` | DLQ operacional no dashboard |
 | `POST` | `/app/queue/dead-letters/{id}/requeue` | Requeue manual de um dead-letter |
 | `GET` | `/app/audit` | Auditoria persistida do dashboard |
+| `GET` | `/app/usage` | Uso mensal no dashboard |
 
 ### Autenticação
 
@@ -601,6 +667,11 @@ O frontend fica em `web/` e foi construído com:
 - `TanStack Query`
 - autenticação por sessão de usuário
 - QR code, mensagens, inbox operacional, grupos, status, campanhas, webhooks, fila, API keys e uso mensal no mesmo dashboard
+- envio avançado: localização, cartão de contato, sticker, resposta citada, reação, edição, encaminhamento e estrela
+- gestão completa de grupos: criar, participantes, info, link de convite, sair
+- operações de chat: arquivar, silenciar (com duração), fixar, marcar lido/não lido
+- perfil e privacidade: ver dados da conta, atualizar descrição, configurar visibilidade e recibos, bloquear contatos
+- pareamento por código de telefone (sem precisar escanear QR) e reinício de instância
 
 Fluxo principal:
 

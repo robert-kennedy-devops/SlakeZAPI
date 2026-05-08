@@ -2,11 +2,29 @@ import type {
   APIKey,
   AuditLog,
   AppEvent,
+  ArchiveChatRequest,
+  ContactAvatar,
+  ContactCardRequest,
   CreateAPIKeyResponse,
   Conversation,
   CurrentUserResponse,
   Campaign,
+  DeleteMessageRequest,
+  EditMessageRequest,
+  ForwardMessageRequest,
   Group,
+  GroupInviteLink,
+  InstanceProfile,
+  LocationMessageRequest,
+  MarkChatReadRequest,
+  MuteChatRequest,
+  PairPhoneRequest,
+  PairPhoneResponse,
+  PinChatRequest,
+  PrivacySettings,
+  QuotedSendRequest,
+  ReactMessageRequest,
+  StarMessageRequest,
   WAContact,
   Instance,
   Message,
@@ -294,8 +312,69 @@ export const api = {
       instanceID,
       body,
     }),
+  // Groups
   groups: (token: string, tenantID: string, instanceID?: string) =>
     request<Group[]>("/app/groups", { token, tenantID, instanceID }),
+  groupInfo: (token: string, tenantID: string, instanceID: string | undefined, jid: string) =>
+    request<Group>(`/app/groups/${encodeURIComponent(jid)}`, { token, tenantID, instanceID }),
+  createGroup: (token: string, tenantID: string, instanceID: string | undefined, body: { name: string; participants: string[] }) =>
+    request<Group>("/app/groups", { method: "POST", token, tenantID, instanceID, body }),
+  updateGroupParticipants: (
+    token: string, tenantID: string, instanceID: string | undefined,
+    jid: string, body: { participants: string[]; action: "add" | "remove" | "promote" | "demote" },
+  ) =>
+    request<{ status: string }>(`/app/groups/${encodeURIComponent(jid)}/participants`, {
+      method: "POST", token, tenantID, instanceID, body,
+    }),
+  updateGroupInfo: (
+    token: string, tenantID: string, instanceID: string | undefined,
+    jid: string, body: { name?: string; description?: string },
+  ) =>
+    request<{ status: string }>(`/app/groups/${encodeURIComponent(jid)}`, {
+      method: "PATCH", token, tenantID, instanceID, body,
+    }),
+  groupInviteLink: (token: string, tenantID: string, instanceID: string | undefined, jid: string) =>
+    request<GroupInviteLink>(`/app/groups/${encodeURIComponent(jid)}/invite`, { token, tenantID, instanceID }),
+  leaveGroup: (token: string, tenantID: string, instanceID: string | undefined, jid: string) =>
+    request<{ status: string }>(`/app/groups/${encodeURIComponent(jid)}/leave`, {
+      method: "POST", token, tenantID, instanceID,
+    }),
+  // Profile & Privacy
+  whatsappProfile: (token: string, tenantID: string, instanceID?: string) =>
+    request<InstanceProfile>("/app/whatsapp/profile", { token, tenantID, instanceID }),
+  updateWhatsappProfile: (token: string, tenantID: string, instanceID: string | undefined, body: { description?: string }) =>
+    request<{ status: string }>("/app/whatsapp/profile", { method: "PATCH", token, tenantID, instanceID, body }),
+  privacySettings: (token: string, tenantID: string, instanceID?: string) =>
+    request<PrivacySettings>("/app/whatsapp/privacy", { token, tenantID, instanceID }),
+  updatePrivacySettings: (
+    token: string, tenantID: string, instanceID: string | undefined,
+    body: Partial<PrivacySettings & { read_receipts?: boolean }>,
+  ) =>
+    request<{ status: string }>("/app/whatsapp/privacy", { method: "PATCH", token, tenantID, instanceID, body }),
+  // Contact actions
+  blockContact: (token: string, tenantID: string, instanceID: string | undefined, phone: string) =>
+    request<{ status: string }>(`/app/contacts/${encodeURIComponent(phone)}/block`, {
+      method: "POST", token, tenantID, instanceID,
+    }),
+  unblockContact: (token: string, tenantID: string, instanceID: string | undefined, phone: string) =>
+    request<{ status: string }>(`/app/contacts/${encodeURIComponent(phone)}/block`, {
+      method: "DELETE", token, tenantID, instanceID,
+    }),
+  contactAvatar: (token: string, tenantID: string, instanceID: string | undefined, phone: string) =>
+    request<ContactAvatar>(`/app/contacts/${encodeURIComponent(phone)}/avatar`, { token, tenantID, instanceID }),
+  // New message types
+  sendLocation: (token: string, tenantID: string, instanceID: string | undefined, body: LocationMessageRequest) =>
+    request<SendMessageResponse>("/app/messages/send-location", { method: "POST", token, tenantID, instanceID, body }),
+  sendContactCard: (token: string, tenantID: string, instanceID: string | undefined, body: ContactCardRequest) =>
+    request<SendMessageResponse>("/app/messages/send-contact", { method: "POST", token, tenantID, instanceID, body }),
+  sendSticker: (token: string, tenantID: string, instanceID: string | undefined, body: { phone: string; url: string }) =>
+    request<SendMessageResponse>("/app/messages/send-sticker", { method: "POST", token, tenantID, instanceID, body }),
+  sendQuoted: (token: string, tenantID: string, instanceID: string | undefined, body: QuotedSendRequest) =>
+    request<SendMessageResponse>("/app/messages/send-quoted", { method: "POST", token, tenantID, instanceID, body }),
+  reactToMessage: (token: string, tenantID: string, instanceID: string | undefined, body: ReactMessageRequest) =>
+    request<{ status: string }>("/app/messages/react", { method: "POST", token, tenantID, instanceID, body }),
+  deleteMessage: (token: string, tenantID: string, instanceID: string | undefined, body: DeleteMessageRequest) =>
+    request<{ status: string }>("/app/messages/delete", { method: "POST", token, tenantID, instanceID, body }),
   waContacts: (token: string, tenantID: string, instanceID?: string) =>
     request<WAContact[]>("/app/contacts", { token, tenantID, instanceID }),
   resolveContacts: (
@@ -440,6 +519,30 @@ export const api = {
     }),
   deleteAPIKey: (token: string, tenantID: string, id: string) =>
     request<void>(`/app/apikeys/${id}`, { method: "DELETE", token, tenantID }),
+
+  // Chat operations
+  archiveChat: (token: string, tenantID: string, phone: string, body: ArchiveChatRequest) =>
+    request<void>(`/app/chats/${phone}/archive`, { method: "POST", token, tenantID, body }),
+  muteChat: (token: string, tenantID: string, phone: string, body: MuteChatRequest) =>
+    request<void>(`/app/chats/${phone}/mute`, { method: "POST", token, tenantID, body }),
+  pinChat: (token: string, tenantID: string, phone: string, body: PinChatRequest) =>
+    request<void>(`/app/chats/${phone}/pin`, { method: "POST", token, tenantID, body }),
+  markChatRead: (token: string, tenantID: string, phone: string, body: MarkChatReadRequest) =>
+    request<void>(`/app/chats/${phone}/read`, { method: "POST", token, tenantID, body }),
+
+  // Message operations
+  editMessage: (token: string, tenantID: string, body: EditMessageRequest) =>
+    request<void>("/app/messages/edit", { method: "POST", token, tenantID, body }),
+  forwardMessage: (token: string, tenantID: string, body: ForwardMessageRequest) =>
+    request<SendMessageResponse>("/app/messages/forward", { method: "POST", token, tenantID, body }),
+  starMessage: (token: string, tenantID: string, body: StarMessageRequest) =>
+    request<void>("/app/messages/star", { method: "POST", token, tenantID, body }),
+
+  // Instance operations
+  pairPhone: (token: string, tenantID: string, body: PairPhoneRequest) =>
+    request<PairPhoneResponse>("/app/whatsapp/pair-phone", { method: "POST", token, tenantID, body }),
+  restartInstance: (token: string, tenantID: string) =>
+    request<void>("/app/whatsapp/restart", { method: "POST", token, tenantID }),
 };
 
 // Token is intentionally omitted from these URLs — the browser sends the

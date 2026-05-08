@@ -536,6 +536,207 @@ func (u *MessageUsecase) PostStatus(ctx context.Context, tenantID string, req do
 	return &domain.SendMessageResponse{MessageID: msg.ID, Status: msg.Status}, nil
 }
 
+func (u *MessageUsecase) SendLocationMessage(ctx context.Context, tenantID string, req domain.LocationMessageRequest) (*domain.SendMessageResponse, error) {
+	instanceID, err := u.resolveInstanceID(ctx, tenantID, req.InstanceID)
+	if err != nil {
+		return nil, err
+	}
+	resolvedPhone, err := u.resolveSingleRecipient(ctx, tenantID, instanceID, req.Phone)
+	if err != nil {
+		return nil, err
+	}
+	req.Phone = resolvedPhone
+	req.InstanceID = instanceID
+	if err := u.billing.CheckLimit(ctx, tenantID); err != nil {
+		return nil, err
+	}
+	waID, err := u.whatsapp.SendLocationMessage(ctx, tenantID, instanceID, req)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	msg := &domain.Message{
+		ID: uuid.NewString(), TenantID: tenantID, InstanceID: instanceID,
+		WhatsAppID: waID, Phone: req.Phone, Body: req.Name,
+		Type: "location", Direction: "outbound", Status: domain.MessageStatusSent,
+		SentAt: now, CreatedAt: now,
+	}
+	_ = u.msgRepo.Create(ctx, msg)
+	go func() { _ = u.billing.TrackSent(context.Background(), tenantID) }()
+	u.eventBus.Publish(domain.Event{Type: domain.EventMessageSent, TenantID: tenantID, InstanceID: instanceID, Payload: msg})
+	return &domain.SendMessageResponse{MessageID: msg.ID, Status: msg.Status}, nil
+}
+
+func (u *MessageUsecase) SendContactCard(ctx context.Context, tenantID string, req domain.ContactCardRequest) (*domain.SendMessageResponse, error) {
+	instanceID, err := u.resolveInstanceID(ctx, tenantID, req.InstanceID)
+	if err != nil {
+		return nil, err
+	}
+	resolvedPhone, err := u.resolveSingleRecipient(ctx, tenantID, instanceID, req.Phone)
+	if err != nil {
+		return nil, err
+	}
+	req.Phone = resolvedPhone
+	req.InstanceID = instanceID
+	if err := u.billing.CheckLimit(ctx, tenantID); err != nil {
+		return nil, err
+	}
+	waID, err := u.whatsapp.SendContactCard(ctx, tenantID, instanceID, req)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	msg := &domain.Message{
+		ID: uuid.NewString(), TenantID: tenantID, InstanceID: instanceID,
+		WhatsAppID: waID, Phone: req.Phone, Body: strings.Join(req.Contacts, ","),
+		Type: "contact", Direction: "outbound", Status: domain.MessageStatusSent,
+		SentAt: now, CreatedAt: now,
+	}
+	_ = u.msgRepo.Create(ctx, msg)
+	go func() { _ = u.billing.TrackSent(context.Background(), tenantID) }()
+	u.eventBus.Publish(domain.Event{Type: domain.EventMessageSent, TenantID: tenantID, InstanceID: instanceID, Payload: msg})
+	return &domain.SendMessageResponse{MessageID: msg.ID, Status: msg.Status}, nil
+}
+
+func (u *MessageUsecase) SendSticker(ctx context.Context, tenantID string, req domain.SendMediaMessageRequest) (*domain.SendMessageResponse, error) {
+	if req.URL == "" {
+		return nil, fmt.Errorf("%w: url is required", domain.ErrBadRequest)
+	}
+	instanceID, err := u.resolveInstanceID(ctx, tenantID, req.InstanceID)
+	if err != nil {
+		return nil, err
+	}
+	resolvedPhone, err := u.resolveSingleRecipient(ctx, tenantID, instanceID, req.Phone)
+	if err != nil {
+		return nil, err
+	}
+	req.Phone = resolvedPhone
+	req.Type = "sticker"
+	enriched, err := enrichMediaRequest(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if err := u.billing.CheckLimit(ctx, tenantID); err != nil {
+		return nil, err
+	}
+	waID, err := u.whatsapp.SendSticker(ctx, tenantID, instanceID, enriched)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	msg := &domain.Message{
+		ID: uuid.NewString(), TenantID: tenantID, InstanceID: instanceID,
+		WhatsAppID: waID, Phone: enriched.Phone,
+		Type: "sticker", Direction: "outbound", Status: domain.MessageStatusSent,
+		SentAt: now, CreatedAt: now,
+	}
+	_ = u.msgRepo.Create(ctx, msg)
+	go func() { _ = u.billing.TrackSent(context.Background(), tenantID) }()
+	u.eventBus.Publish(domain.Event{Type: domain.EventMessageSent, TenantID: tenantID, InstanceID: instanceID, Payload: msg})
+	return &domain.SendMessageResponse{MessageID: msg.ID, Status: msg.Status}, nil
+}
+
+func (u *MessageUsecase) ReactToMessage(ctx context.Context, tenantID string, req domain.ReactMessageRequest) error {
+	instanceID, err := u.resolveInstanceID(ctx, tenantID, req.InstanceID)
+	if err != nil {
+		return err
+	}
+	return u.whatsapp.ReactToMessage(ctx, tenantID, instanceID, req)
+}
+
+func (u *MessageUsecase) DeleteMessage(ctx context.Context, tenantID string, req domain.DeleteMessageRequest) error {
+	instanceID, err := u.resolveInstanceID(ctx, tenantID, req.InstanceID)
+	if err != nil {
+		return err
+	}
+	return u.whatsapp.DeleteMessage(ctx, tenantID, instanceID, req)
+}
+
+func (u *MessageUsecase) SendQuotedMessage(ctx context.Context, tenantID string, req domain.QuotedSendRequest) (*domain.SendMessageResponse, error) {
+	if strings.TrimSpace(req.Message) == "" || strings.TrimSpace(req.QuotedMessageID) == "" {
+		return nil, fmt.Errorf("%w: message and quoted_message_id are required", domain.ErrBadRequest)
+	}
+	instanceID, err := u.resolveInstanceID(ctx, tenantID, req.InstanceID)
+	if err != nil {
+		return nil, err
+	}
+	resolvedPhone, err := u.resolveSingleRecipient(ctx, tenantID, instanceID, req.Phone)
+	if err != nil {
+		return nil, err
+	}
+	req.Phone = resolvedPhone
+	if err := u.billing.CheckLimit(ctx, tenantID); err != nil {
+		return nil, err
+	}
+	waID, err := u.whatsapp.SendQuotedMessage(ctx, tenantID, instanceID, req)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	msg := &domain.Message{
+		ID: uuid.NewString(), TenantID: tenantID, InstanceID: instanceID,
+		WhatsAppID: waID, Phone: req.Phone, Body: req.Message,
+		Type: "text", Direction: "outbound", Status: domain.MessageStatusSent,
+		SentAt: now, CreatedAt: now,
+	}
+	_ = u.msgRepo.Create(ctx, msg)
+	go func() { _ = u.billing.TrackSent(context.Background(), tenantID) }()
+	u.eventBus.Publish(domain.Event{Type: domain.EventMessageSent, TenantID: tenantID, InstanceID: instanceID, Payload: msg})
+	return &domain.SendMessageResponse{MessageID: msg.ID, Status: msg.Status}, nil
+}
+
+func (u *MessageUsecase) EditMessage(ctx context.Context, tenantID string, req domain.EditMessageRequest) error {
+	if strings.TrimSpace(req.MessageID) == "" || strings.TrimSpace(req.NewMessage) == "" {
+		return fmt.Errorf("%w: message_id and new_message are required", domain.ErrBadRequest)
+	}
+	instanceID, err := u.resolveInstanceID(ctx, tenantID, req.InstanceID)
+	if err != nil {
+		return err
+	}
+	return u.whatsapp.EditMessage(ctx, tenantID, instanceID, req)
+}
+
+func (u *MessageUsecase) ForwardMessage(ctx context.Context, tenantID string, req domain.ForwardMessageRequest) (*domain.SendMessageResponse, error) {
+	if strings.TrimSpace(req.Phone) == "" || strings.TrimSpace(req.Message) == "" {
+		return nil, fmt.Errorf("%w: phone and message are required", domain.ErrBadRequest)
+	}
+	instanceID, err := u.resolveInstanceID(ctx, tenantID, req.InstanceID)
+	if err != nil {
+		return nil, err
+	}
+	resolvedPhone, err := u.resolveSingleRecipient(ctx, tenantID, instanceID, req.Phone)
+	if err != nil {
+		return nil, err
+	}
+	req.Phone = resolvedPhone
+	if err := u.billing.CheckLimit(ctx, tenantID); err != nil {
+		return nil, err
+	}
+	waID, err := u.whatsapp.ForwardMessage(ctx, tenantID, instanceID, req)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	msg := &domain.Message{
+		ID: uuid.NewString(), TenantID: tenantID, InstanceID: instanceID,
+		WhatsAppID: waID, Phone: req.Phone, Body: req.Message,
+		Type: "text", Direction: "outbound", Status: domain.MessageStatusSent,
+		SentAt: now, CreatedAt: now,
+	}
+	_ = u.msgRepo.Create(ctx, msg)
+	go func() { _ = u.billing.TrackSent(context.Background(), tenantID) }()
+	u.eventBus.Publish(domain.Event{Type: domain.EventMessageSent, TenantID: tenantID, InstanceID: instanceID, Payload: msg})
+	return &domain.SendMessageResponse{MessageID: msg.ID, Status: msg.Status}, nil
+}
+
+func (u *MessageUsecase) StarMessage(ctx context.Context, tenantID string, req domain.StarMessageRequest) error {
+	instanceID, err := u.resolveInstanceID(ctx, tenantID, req.InstanceID)
+	if err != nil {
+		return err
+	}
+	return u.whatsapp.StarMessage(ctx, tenantID, instanceID, req)
+}
+
 func (u *MessageUsecase) ListGroups(ctx context.Context, tenantID, requestedInstanceID string) ([]domain.Group, error) {
 	instanceID, err := u.resolveInstanceID(ctx, tenantID, requestedInstanceID)
 	if err != nil {

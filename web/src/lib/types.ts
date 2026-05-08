@@ -160,6 +160,13 @@ export interface QueueRequeueResponse {
   status: string;
 }
 
+export interface GroupParticipant {
+  jid: string;
+  phone: string;
+  is_admin: boolean;
+  is_super_admin: boolean;
+}
+
 export interface Group {
   jid: string;
   name: string;
@@ -168,6 +175,69 @@ export interface Group {
   is_announce: boolean;
   is_locked: boolean;
   created_at: string;
+  participants?: GroupParticipant[];
+}
+
+export interface GroupInviteLink {
+  group_jid: string;
+  invite_link: string;
+}
+
+export interface InstanceProfile {
+  instance_id: string;
+  phone?: string;
+  name?: string;
+  description?: string;
+  picture_url?: string;
+}
+
+export interface PrivacySettings {
+  last_seen: string;
+  profile_photo: string;
+  status: string;
+  read_receipts: boolean;
+  group_add: string;
+}
+
+export interface ContactAvatar {
+  phone: string;
+  url?: string;
+}
+
+export interface LocationMessageRequest {
+  phone: string;
+  latitude: number;
+  longitude: number;
+  name?: string;
+  address?: string;
+  instance_id?: string;
+}
+
+export interface ContactCardRequest {
+  phone: string;
+  contacts: string[];
+  instance_id?: string;
+}
+
+export interface ReactMessageRequest {
+  phone: string;
+  message_id: string;
+  emoji: string;
+  instance_id?: string;
+}
+
+export interface DeleteMessageRequest {
+  phone: string;
+  message_id: string;
+  for_everyone: boolean;
+  instance_id?: string;
+}
+
+export interface QuotedSendRequest {
+  phone: string;
+  message: string;
+  quoted_message_id: string;
+  instance_id?: string;
 }
 
 export interface WAContact {
@@ -277,6 +347,62 @@ export interface CampaignRecipientInput {
   phone: string;
   name?: string;
   variables?: Record<string, string>;
+}
+
+export interface ArchiveChatRequest {
+  phone: string;
+  archive: boolean;
+  instance_id?: string;
+}
+
+export interface MuteChatRequest {
+  phone: string;
+  mute: boolean;
+  duration_hours?: number;
+  instance_id?: string;
+}
+
+export interface PinChatRequest {
+  phone: string;
+  pin: boolean;
+  instance_id?: string;
+}
+
+export interface MarkChatReadRequest {
+  phone: string;
+  read: boolean;
+  last_message_id?: string;
+  instance_id?: string;
+}
+
+export interface EditMessageRequest {
+  phone: string;
+  message_id: string;
+  new_message: string;
+  instance_id?: string;
+}
+
+export interface ForwardMessageRequest {
+  phone: string;
+  message: string;
+  instance_id?: string;
+}
+
+export interface StarMessageRequest {
+  phone: string;
+  message_id: string;
+  starred: boolean;
+  from_me: boolean;
+  instance_id?: string;
+}
+
+export interface PairPhoneRequest {
+  phone: string;
+  instance_id?: string;
+}
+
+export interface PairPhoneResponse {
+  code: string;
 }
 
 export interface Campaign {

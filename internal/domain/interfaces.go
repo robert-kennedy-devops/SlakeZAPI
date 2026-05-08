@@ -129,13 +129,44 @@ type WhatsAppService interface {
 	SendMediaMessage(ctx context.Context, tenantID, instanceID string, req SendMediaMessageRequest) (string, error)
 	SendInteractiveMessage(ctx context.Context, tenantID, instanceID string, req InteractiveMessageRequest) (string, error)
 	SendGroupMessage(ctx context.Context, tenantID, instanceID string, req GroupMessageRequest) (string, error)
+	SendLocationMessage(ctx context.Context, tenantID, instanceID string, req LocationMessageRequest) (string, error)
+	SendContactCard(ctx context.Context, tenantID, instanceID string, req ContactCardRequest) (string, error)
+	SendSticker(ctx context.Context, tenantID, instanceID string, req SendMediaMessageRequest) (string, error)
+	ReactToMessage(ctx context.Context, tenantID, instanceID string, req ReactMessageRequest) error
+	DeleteMessage(ctx context.Context, tenantID, instanceID string, req DeleteMessageRequest) error
+	SendQuotedMessage(ctx context.Context, tenantID, instanceID string, req QuotedSendRequest) (string, error)
 	PostStatus(ctx context.Context, tenantID, instanceID string, req StatusMessageRequest) (string, error)
 	ListGroups(ctx context.Context, tenantID, instanceID string) ([]Group, error)
+	GetGroupInfo(ctx context.Context, tenantID, instanceID, groupJID string) (*Group, error)
+	CreateGroup(ctx context.Context, tenantID, instanceID string, req CreateGroupRequest) (*Group, error)
+	UpdateGroupParticipants(ctx context.Context, tenantID, instanceID string, req UpdateGroupParticipantsRequest) error
+	UpdateGroupInfo(ctx context.Context, tenantID, instanceID string, req UpdateGroupInfoRequest) error
+	GetGroupInviteLink(ctx context.Context, tenantID, instanceID, groupJID string) (*GroupInviteLink, error)
+	LeaveGroup(ctx context.Context, tenantID, instanceID, groupJID string) error
 	ListContacts(ctx context.Context, tenantID, instanceID string) ([]WAContact, error)
 	ResolveContacts(ctx context.Context, tenantID, instanceID string, phones []string) ([]ResolvedContact, error)
+	BlockContact(ctx context.Context, tenantID, instanceID, phone string) error
+	UnblockContact(ctx context.Context, tenantID, instanceID, phone string) error
+	GetContactAvatar(ctx context.Context, tenantID, instanceID, phone string) (*ContactAvatar, error)
 	DownloadMedia(ctx context.Context, tenantID, instanceID string, msg *Message) (*MediaDownload, error)
 	GetSession(ctx context.Context, tenantID, instanceID string) (*Session, error)
 	GetStatus(ctx context.Context, tenantID, instanceID string) SessionStatus
+	GetProfile(ctx context.Context, tenantID, instanceID string) (*InstanceProfile, error)
+	UpdateProfile(ctx context.Context, tenantID, instanceID string, req UpdateProfileRequest) error
+	GetPrivacySettings(ctx context.Context, tenantID, instanceID string) (*PrivacySettings, error)
+	UpdatePrivacySettings(ctx context.Context, tenantID, instanceID string, req UpdatePrivacyRequest) error
+	// Chat operations
+	ArchiveChat(ctx context.Context, tenantID, instanceID string, req ArchiveChatRequest) error
+	MuteChat(ctx context.Context, tenantID, instanceID string, req MuteChatRequest) error
+	PinChat(ctx context.Context, tenantID, instanceID string, req PinChatRequest) error
+	MarkChatRead(ctx context.Context, tenantID, instanceID string, req MarkChatReadRequest) error
+	// Message operations
+	EditMessage(ctx context.Context, tenantID, instanceID string, req EditMessageRequest) error
+	ForwardMessage(ctx context.Context, tenantID, instanceID string, req ForwardMessageRequest) (string, error)
+	StarMessage(ctx context.Context, tenantID, instanceID string, req StarMessageRequest) error
+	// Instance operations
+	PairPhone(ctx context.Context, tenantID, instanceID, phone string) (string, error)
+	RestartInstance(ctx context.Context, tenantID, instanceID string) error
 }
 
 // EventBus broadcasts events internally (to WebSocket clients, webhooks, etc.)

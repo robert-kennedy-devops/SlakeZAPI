@@ -145,6 +145,245 @@ func (h *WhatsAppHandler) Logout(w http.ResponseWriter, r *http.Request) {
 
 	httputil.JSON(w, http.StatusOK, map[string]string{"status": "logged_out"})
 }
+func (h *WhatsAppHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.TenantFromCtx(r.Context())
+	instanceID := middleware.InstanceFromCtx(r.Context())
+	profile, err := h.waUC.GetProfile(r.Context(), tenantID, instanceID)
+	if err != nil {
+		httputil.DomainError(w, err)
+		return
+	}
+	httputil.JSON(w, http.StatusOK, profile)
+}
+
+func (h *WhatsAppHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.TenantFromCtx(r.Context())
+	if tenantID == "" {
+		httputil.Error(w, http.StatusUnauthorized, "missing tenant context")
+		return
+	}
+	var req domain.UpdateProfileRequest
+	if err := httputil.Decode(r, &req); err != nil {
+		httputil.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	req.InstanceID = middleware.InstanceFromCtx(r.Context())
+	if err := h.waUC.UpdateProfile(r.Context(), tenantID, req); err != nil {
+		httputil.DomainError(w, err)
+		return
+	}
+	h.log.WithContext(r.Context()).Audit("whatsapp.update_profile")
+	httputil.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (h *WhatsAppHandler) GetPrivacy(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.TenantFromCtx(r.Context())
+	instanceID := middleware.InstanceFromCtx(r.Context())
+	settings, err := h.waUC.GetPrivacySettings(r.Context(), tenantID, instanceID)
+	if err != nil {
+		httputil.DomainError(w, err)
+		return
+	}
+	httputil.JSON(w, http.StatusOK, settings)
+}
+
+func (h *WhatsAppHandler) UpdatePrivacy(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.TenantFromCtx(r.Context())
+	if tenantID == "" {
+		httputil.Error(w, http.StatusUnauthorized, "missing tenant context")
+		return
+	}
+	var req domain.UpdatePrivacyRequest
+	if err := httputil.Decode(r, &req); err != nil {
+		httputil.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	req.InstanceID = middleware.InstanceFromCtx(r.Context())
+	if err := h.waUC.UpdatePrivacySettings(r.Context(), tenantID, req); err != nil {
+		httputil.DomainError(w, err)
+		return
+	}
+	h.log.WithContext(r.Context()).Audit("whatsapp.update_privacy")
+	httputil.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (h *WhatsAppHandler) BlockContact(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.TenantFromCtx(r.Context())
+	instanceID := middleware.InstanceFromCtx(r.Context())
+	phone := r.PathValue("phone")
+	if phone == "" {
+		httputil.Error(w, http.StatusBadRequest, "phone is required")
+		return
+	}
+	if err := h.waUC.BlockContact(r.Context(), tenantID, instanceID, phone); err != nil {
+		httputil.DomainError(w, err)
+		return
+	}
+	h.log.WithContext(r.Context()).Audit("contact.block", map[string]interface{}{"phone": phone})
+	httputil.JSON(w, http.StatusOK, map[string]string{"status": "blocked"})
+}
+
+func (h *WhatsAppHandler) UnblockContact(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.TenantFromCtx(r.Context())
+	instanceID := middleware.InstanceFromCtx(r.Context())
+	phone := r.PathValue("phone")
+	if phone == "" {
+		httputil.Error(w, http.StatusBadRequest, "phone is required")
+		return
+	}
+	if err := h.waUC.UnblockContact(r.Context(), tenantID, instanceID, phone); err != nil {
+		httputil.DomainError(w, err)
+		return
+	}
+	h.log.WithContext(r.Context()).Audit("contact.unblock", map[string]interface{}{"phone": phone})
+	httputil.JSON(w, http.StatusOK, map[string]string{"status": "unblocked"})
+}
+
+func (h *WhatsAppHandler) GetContactAvatar(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.TenantFromCtx(r.Context())
+	instanceID := middleware.InstanceFromCtx(r.Context())
+	phone := r.PathValue("phone")
+	if phone == "" {
+		httputil.Error(w, http.StatusBadRequest, "phone is required")
+		return
+	}
+	avatar, err := h.waUC.GetContactAvatar(r.Context(), tenantID, instanceID, phone)
+	if err != nil {
+		httputil.DomainError(w, err)
+		return
+	}
+	httputil.JSON(w, http.StatusOK, avatar)
+}
+
+func (h *WhatsAppHandler) PairPhone(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.TenantFromCtx(r.Context())
+	instanceID := middleware.InstanceFromCtx(r.Context())
+	if tenantID == "" {
+		httputil.Error(w, http.StatusUnauthorized, "missing tenant context")
+		return
+	}
+	var req domain.PairPhoneRequest
+	if err := httputil.Decode(r, &req); err != nil {
+		httputil.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Phone == "" {
+		httputil.Error(w, http.StatusBadRequest, "phone is required")
+		return
+	}
+	req.InstanceID = instanceID
+	code, err := h.waUC.PairPhone(r.Context(), tenantID, req.InstanceID, req.Phone)
+	if err != nil {
+		httputil.DomainError(w, err)
+		return
+	}
+	h.log.WithContext(r.Context()).Audit("whatsapp.pair_phone", map[string]interface{}{"phone": req.Phone})
+	httputil.JSON(w, http.StatusOK, domain.PairPhoneResponse{Code: code})
+}
+
+func (h *WhatsAppHandler) Restart(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.TenantFromCtx(r.Context())
+	instanceID := middleware.InstanceFromCtx(r.Context())
+	if tenantID == "" {
+		httputil.Error(w, http.StatusUnauthorized, "missing tenant context")
+		return
+	}
+	if err := h.waUC.RestartInstance(r.Context(), tenantID, instanceID); err != nil {
+		httputil.DomainError(w, err)
+		return
+	}
+	h.log.WithContext(r.Context()).Audit("whatsapp.restart")
+	httputil.JSON(w, http.StatusOK, map[string]string{"status": "restarted"})
+}
+
+func (h *WhatsAppHandler) ArchiveChat(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.TenantFromCtx(r.Context())
+	if tenantID == "" {
+		httputil.Error(w, http.StatusUnauthorized, "missing tenant context")
+		return
+	}
+	var req domain.ArchiveChatRequest
+	if err := httputil.Decode(r, &req); err != nil {
+		httputil.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	req.InstanceID = middleware.InstanceFromCtx(r.Context())
+	if req.Phone == "" {
+		req.Phone = r.PathValue("phone")
+	}
+	if err := h.waUC.ArchiveChat(r.Context(), tenantID, req); err != nil {
+		httputil.DomainError(w, err)
+		return
+	}
+	httputil.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (h *WhatsAppHandler) MuteChat(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.TenantFromCtx(r.Context())
+	if tenantID == "" {
+		httputil.Error(w, http.StatusUnauthorized, "missing tenant context")
+		return
+	}
+	var req domain.MuteChatRequest
+	if err := httputil.Decode(r, &req); err != nil {
+		httputil.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	req.InstanceID = middleware.InstanceFromCtx(r.Context())
+	if req.Phone == "" {
+		req.Phone = r.PathValue("phone")
+	}
+	if err := h.waUC.MuteChat(r.Context(), tenantID, req); err != nil {
+		httputil.DomainError(w, err)
+		return
+	}
+	httputil.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (h *WhatsAppHandler) PinChat(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.TenantFromCtx(r.Context())
+	if tenantID == "" {
+		httputil.Error(w, http.StatusUnauthorized, "missing tenant context")
+		return
+	}
+	var req domain.PinChatRequest
+	if err := httputil.Decode(r, &req); err != nil {
+		httputil.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	req.InstanceID = middleware.InstanceFromCtx(r.Context())
+	if req.Phone == "" {
+		req.Phone = r.PathValue("phone")
+	}
+	if err := h.waUC.PinChat(r.Context(), tenantID, req); err != nil {
+		httputil.DomainError(w, err)
+		return
+	}
+	httputil.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (h *WhatsAppHandler) MarkChatRead(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.TenantFromCtx(r.Context())
+	if tenantID == "" {
+		httputil.Error(w, http.StatusUnauthorized, "missing tenant context")
+		return
+	}
+	var req domain.MarkChatReadRequest
+	if err := httputil.Decode(r, &req); err != nil {
+		httputil.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	req.InstanceID = middleware.InstanceFromCtx(r.Context())
+	if req.Phone == "" {
+		req.Phone = r.PathValue("phone")
+	}
+	if err := h.waUC.MarkChatRead(r.Context(), tenantID, req); err != nil {
+		httputil.DomainError(w, err)
+		return
+	}
+	httputil.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
 func attachQRLinks(r *http.Request, resp *domain.ConnectResponse) {
 	if resp == nil || resp.QRCode == "" {
 		return
