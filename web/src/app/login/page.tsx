@@ -36,25 +36,54 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-6xl items-center px-6 py-12 lg:px-10">
+    <main className="relative mx-auto flex min-h-screen max-w-6xl items-center px-6 py-12 lg:px-10">
+      <div className="hero-orb left-[-80px] top-20 h-56 w-56 bg-glow/20" />
       <div className="grid w-full gap-8 lg:grid-cols-[0.95fr_1.05fr]">
         <section className="flex flex-col justify-center">
-          <p className="panel-title">Acesso ao Console</p>
+          <p className="section-kicker">Acesso ao workspace</p>
           <h1 className="mt-4 text-5xl font-bold text-white">
-            Entrar no workspace
+            Entrar e retomar a operacao em segundos
           </h1>
           <p className="mt-4 max-w-xl text-lg leading-8 text-slate-300">
-            Use o login da camada app para operar tenants, sessoes WhatsApp,
-            mensagens e webhooks sem depender de API key manual.
+            Seu cliente precisa sentir controle logo no login. Esta entrada
+            prioriza clareza, continuidade de sessao e foco no que importa:
+            conexao, mensagens e performance do workspace.
           </p>
+          <div className="mt-8 grid gap-3 sm:grid-cols-2">
+            {[
+              [
+                "Operacao centralizada",
+                "Instancias, inbox e campanhas no mesmo lugar.",
+              ],
+              [
+                "Acesso por papel",
+                "Owner, admin, operator e viewer com governanca clara.",
+              ],
+            ].map(([title, description]) => (
+              <div key={title} className="surface-muted p-4">
+                <p className="text-sm font-semibold text-white">{title}</p>
+                <p className="mt-2 text-sm leading-6 text-slate-400">
+                  {description}
+                </p>
+              </div>
+            ))}
+          </div>
         </section>
 
-        <section className="panel p-8">
+        <section className="auth-shell p-8">
           <form
             className="space-y-4"
             data-testid="login-form"
             onSubmit={onSubmit}
           >
+            <div>
+              <p className="text-lg font-semibold text-white">
+                Entrar no painel
+              </p>
+              <p className="mt-1 text-sm text-slate-400">
+                Use suas credenciais para abrir o workspace ativo.
+              </p>
+            </div>
             <div>
               <label className="mb-2 block text-sm text-slate-300">Email</label>
               <input

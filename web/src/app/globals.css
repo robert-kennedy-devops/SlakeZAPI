@@ -8,13 +8,31 @@
 
 html {
   background:
-    radial-gradient(circle at top, rgba(79, 209, 255, 0.16), transparent 34%),
-    radial-gradient(circle at 80% 0%, rgba(122, 247, 167, 0.14), transparent 24%),
-    linear-gradient(180deg, #020817 0%, #08111f 100%);
+    radial-gradient(
+      circle at top left,
+      rgba(79, 209, 255, 0.16),
+      transparent 30%
+    ),
+    radial-gradient(
+      circle at 85% 10%,
+      rgba(122, 247, 167, 0.12),
+      transparent 20%
+    ),
+    radial-gradient(
+      circle at 50% 120%,
+      rgba(255, 184, 107, 0.12),
+      transparent 24%
+    ),
+    linear-gradient(180deg, #020817 0%, #08111f 55%, #0b1529 100%);
+  scroll-behavior: smooth;
 }
 
 body {
   font-family: var(--font-body), sans-serif;
+}
+
+body::selection {
+  background: rgba(79, 209, 255, 0.24);
 }
 
 h1,
@@ -25,7 +43,8 @@ h4 {
 }
 
 .grid-background {
-  background-image: linear-gradient(rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.08) 1px, transparent 1px),
     linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px);
   background-size: 32px 32px;
 }
@@ -80,5 +99,29 @@ h4 {
 
   .badge {
     @apply inline-flex items-center rounded-full border border-white/10 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.22em] text-slate-300;
+  }
+
+  .hero-orb {
+    @apply pointer-events-none absolute rounded-full blur-3xl;
+  }
+
+  .surface-muted {
+    @apply rounded-[28px] border border-white/10 bg-white/[0.04] backdrop-blur-xl;
+  }
+
+  .nav-chip {
+    @apply inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-medium text-slate-300 transition hover:border-glow/40 hover:bg-glow/10 hover:text-white;
+  }
+
+  .section-kicker {
+    @apply text-xs font-semibold uppercase tracking-[0.3em] text-glow;
+  }
+
+  .metric-shell {
+    @apply rounded-[28px] border border-white/10 bg-slate-950/50 p-5 shadow-panel backdrop-blur-xl;
+  }
+
+  .auth-shell {
+    @apply relative overflow-hidden rounded-[32px] border border-white/10 bg-panel/90 shadow-panel backdrop-blur-xl;
   }
 }

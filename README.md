@@ -80,7 +80,8 @@ whatsapp-saas/
 │   └── docker-compose.yml       # API + PostgreSQL + frontend
 ├── web/
 │   ├── src/app/                 # App Router (login, signup, dashboard)
-│   ├── src/components/          # Dashboard e providers React Query
+│   ├── src/components/          # Container do dashboard, módulos visuais e providers
+│   │   └── dashboard/           # Módulos separados: overview, operations, automation e settings
 │   └── src/lib/                 # API client, auth local e tipos do frontend
 ├── .env.example
 └── go.mod
@@ -672,6 +673,18 @@ O frontend fica em `web/` e foi construído com:
 - operações de chat: arquivar, silenciar (com duração), fixar, marcar lido/não lido
 - perfil e privacidade: ver dados da conta, atualizar descrição, configurar visibilidade e recibos, bloquear contatos
 - pareamento por código de telefone (sem precisar escanear QR) e reinício de instância
+
+Organização atual do dashboard:
+
+- `dashboard-client.tsx` atua como container principal de estado, queries e mutations
+- `src/components/dashboard/dashboard-header.tsx` concentra o topo executivo do workspace
+- `src/components/dashboard/overview-module.tsx` exibe navegação e KPIs iniciais
+- `src/components/dashboard/operations-module.tsx` agrupa conexão, inbox, campanhas e operação diária
+- `src/components/dashboard/automation-module.tsx` separa recursos avançados e gestão de grupos
+- `src/components/dashboard/settings-module.tsx` organiza conta, privacidade e ferramentas de manutenção
+- `src/components/dashboard/shared.tsx` reúne componentes reutilizáveis como cards, painéis e estados vazios
+
+Essa divisão mantém a lógica atual intacta, mas deixa a interface preparada para futuras evoluções por domínio sem voltar ao arquivo monolítico anterior.
 
 Fluxo principal:
 

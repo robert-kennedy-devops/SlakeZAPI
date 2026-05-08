@@ -48,25 +48,50 @@ export default function SignUpPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-6xl items-center px-6 py-12 lg:px-10">
+    <main className="relative mx-auto flex min-h-screen max-w-6xl items-center px-6 py-12 lg:px-10">
+      <div className="hero-orb right-[-60px] top-20 h-56 w-56 bg-neon/15" />
       <div className="grid w-full gap-8 lg:grid-cols-[0.95fr_1.05fr]">
         <section className="flex flex-col justify-center">
-          <p className="panel-title">Onboarding SaaS</p>
+          <p className="section-kicker">Onboarding SaaS</p>
           <h1 className="mt-4 text-5xl font-bold text-white">
-            Criar workspace e entrar operando
+            Criar workspace com cara de produto pronto
           </h1>
           <p className="mt-4 max-w-xl text-lg leading-8 text-slate-300">
-            Signup cria usuario, tenant, membership owner e assinatura inicial.
-            O painel ja fica pronto para conectar o WhatsApp.
+            O primeiro fluxo precisa vender confianca. Este onboarding prepara
+            usuario, workspace, permissao e plano inicial para o cliente entrar
+            direto na operacao do WhatsApp.
           </p>
+          <div className="mt-8 grid gap-3">
+            {[
+              "Cadastro guiado para reduzir friccao de ativacao.",
+              "Plano inicial claro para facilitar demonstracao comercial.",
+              "Workspace pronto para conectar a primeira instancia.",
+            ].map((item) => (
+              <div
+                key={item}
+                className="surface-muted px-4 py-3 text-sm text-slate-300"
+              >
+                {item}
+              </div>
+            ))}
+          </div>
         </section>
 
-        <section className="panel p-8">
+        <section className="auth-shell p-8">
           <form
             className="grid gap-4"
             data-testid="signup-form"
             onSubmit={onSubmit}
           >
+            <div>
+              <p className="text-lg font-semibold text-white">
+                Criar workspace
+              </p>
+              <p className="mt-1 text-sm text-slate-400">
+                Configure a conta principal e deixe o ambiente pronto para
+                demonstracao.
+              </p>
+            </div>
             <input
               className="input"
               data-testid="signup-name"
