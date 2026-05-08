@@ -119,6 +119,12 @@ export interface Message {
   created_at: string;
 }
 
+export interface MessageTranscript {
+  text: string;
+  provider: string;
+  model: string;
+}
+
 export interface Conversation {
   id: string;
   tenant_id: string;

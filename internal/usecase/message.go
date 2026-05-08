@@ -29,6 +29,7 @@ type MessageUsecase struct {
 	instanceRepo domain.InstanceRepository
 	campaignRepo domain.CampaignRepository
 	whatsapp     domain.WhatsAppService
+	transcriber  domain.AudioTranscriber
 	billing      domain.BillingService
 	eventBus     domain.EventBus
 	log          *logger.Logger
@@ -145,6 +146,27 @@ func (u *MessageUsecase) GetMessageMedia(ctx context.Context, tenantID, requeste
 	return download, nil
 }
 
+func (u *MessageUsecase) GetMessageTranscript(ctx context.Context, tenantID, requestedInstanceID, messageID string) (*domain.MessageTranscript, error) {
+	if u.transcriber == nil {
+		return nil, domain.ErrMessageTranscriptOff
+	}
+
+	msg, err := u.GetMessage(ctx, tenantID, requestedInstanceID, messageID)
+	if err != nil {
+		return nil, err
+	}
+	if msg.Type != "audio" {
+		return nil, domain.ErrMessageTranscriptType
+	}
+
+	download, err := u.GetMessageMedia(ctx, tenantID, requestedInstanceID, messageID)
+	if err != nil {
+		return nil, err
+	}
+
+	return u.transcriber.Transcribe(ctx, download.FileName, download.MimeType, download.Data)
+}
+
 func (u *MessageUsecase) ResolveContacts(ctx context.Context, tenantID string, req domain.ResolveContactsRequest) ([]domain.ResolvedContact, error) {
 	instanceID, err := u.resolveInstanceID(ctx, tenantID, req.InstanceID)
 	if err != nil {
@@ -205,6 +227,10 @@ func NewMessageUsecase(
 		eventBus:     eventBus,
 		log:          log,
 	}
+}
+
+func (u *MessageUsecase) SetAudioTranscriber(transcriber domain.AudioTranscriber) {
+	u.transcriber = transcriber
 }
 
 // SendMessage validates, checks billing, sends via WhatsApp, and persists the message.

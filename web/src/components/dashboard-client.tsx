@@ -209,6 +209,18 @@ export function DashboardClient() {
   const [lastSecret, setLastSecret] = useState("");
   const [flash, setFlash] = useState("");
   const [isPending, startTransition] = useTransition();
+  const [messageTranscriptState, setMessageTranscriptState] = useState<
+    Record<
+      string,
+      {
+        text?: string;
+        error?: string;
+        loading?: boolean;
+        provider?: string;
+        model?: string;
+      }
+    >
+  >({});
 
   // ── New feature state ──────────────────────────────────────────────────────
   const [locationForm, setLocationForm] = useState({
@@ -1142,6 +1154,79 @@ export function DashboardClient() {
   function handleMutationError(error: unknown) {
     const message = extractErrorMessage(error);
     setFlash(message);
+  }
+
+  function getMessageMediaURL(message: Message, download = false) {
+    return makeMediaDownloadURL(
+      tenantHeader,
+      instanceHeader,
+      message.id,
+      download,
+    );
+  }
+
+  function isPlayableAudioMessage(message: Message) {
+    return message.type === "audio" && Boolean(message.direct_path);
+  }
+
+  function formatMessageBody(message: Message) {
+    if (message.body) {
+      if (message.body === "[unsupported]" && message.type === "audio") {
+        return "[audio recebido]";
+      }
+      return message.body;
+    }
+    return "[sem corpo textual]";
+  }
+
+  function formatFileLength(fileLength?: number) {
+    if (!fileLength || fileLength <= 0) return "";
+    const units = ["B", "KB", "MB", "GB"];
+    let value = fileLength;
+    let index = 0;
+    while (value >= 1024 && index < units.length - 1) {
+      value /= 1024;
+      index += 1;
+    }
+    return `${value >= 10 || index === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[index]}`;
+  }
+
+  async function handleTranscriptRequest(message: Message) {
+    setMessageTranscriptState((current) => ({
+      ...current,
+      [message.id]: {
+        ...current[message.id],
+        loading: true,
+        error: undefined,
+      },
+    }));
+
+    try {
+      const transcript = await api.messageTranscript(
+        token,
+        tenantHeader,
+        instanceHeader,
+        message.id,
+      );
+      setMessageTranscriptState((current) => ({
+        ...current,
+        [message.id]: {
+          loading: false,
+          text: transcript.text,
+          provider: transcript.provider,
+          model: transcript.model,
+        },
+      }));
+    } catch (error) {
+      setMessageTranscriptState((current) => ({
+        ...current,
+        [message.id]: {
+          ...current[message.id],
+          loading: false,
+          error: extractErrorMessage(error),
+        },
+      }));
+    }
   }
 
   function toggleBulkPhone(phone: string) {
@@ -2274,45 +2359,107 @@ export function DashboardClient() {
 
                   <div className="stack-scroll max-h-[42rem]">
                     {messagesQuery.data?.length ? (
-                      messagesQuery.data.slice(0, 12).map((message) => (
-                        <div
-                          key={message.id}
-                          className="rounded-2xl border border-white/10 bg-slate-950/60 p-4"
-                        >
-                          <div className="flex flex-wrap items-center justify-between gap-3">
-                            <div className="flex items-center gap-3">
-                              <span className="badge">{message.direction}</span>
-                              <span className="text-sm font-medium text-white">
-                                {message.phone}
-                              </span>
-                              <span className="text-xs text-slate-500">
-                                {message.type}
-                              </span>
+                      messagesQuery.data.slice(0, 12).map((message) => {
+                        const transcriptState = messageTranscriptState[message.id];
+                        const playableAudio = isPlayableAudioMessage(message);
+
+                        return (
+                          <div
+                            key={message.id}
+                            className="rounded-2xl border border-white/10 bg-slate-950/60 p-4"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <div className="flex items-center gap-3">
+                                <span className="badge">{message.direction}</span>
+                                <span className="text-sm font-medium text-white">
+                                  {message.phone}
+                                </span>
+                                <span className="text-xs text-slate-500">
+                                  {message.type}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-4">
+                                <span className="text-xs text-slate-500">
+                                  {formatDate(message.sent_at)}
+                                </span>
+                                {message.direct_path ? (
+                                  <a
+                                    className="text-xs font-medium text-glow hover:underline"
+                                    href={getMessageMediaURL(message, true)}
+                                    target="_blank"
+                                  >
+                                    Baixar midia
+                                  </a>
+                                ) : null}
+                              </div>
                             </div>
-                            <div className="flex items-center gap-4">
-                              <span className="text-xs text-slate-500">
-                                {formatDate(message.sent_at)}
-                              </span>
-                              {message.direct_path ? (
-                                <a
-                                  className="text-xs font-medium text-glow hover:underline"
-                                  href={makeMediaDownloadURL(
-                                    tenantHeader,
-                                    instanceHeader,
-                                    message.id,
-                                  )}
-                                  target="_blank"
+                            <p className="mt-3 text-sm leading-6 text-slate-300">
+                              {formatMessageBody(message)}
+                            </p>
+                            {playableAudio ? (
+                              <div className="mt-4 rounded-2xl border border-white/10 bg-slate-900/80 p-4">
+                                <div className="flex flex-wrap items-center justify-between gap-3">
+                                  <div className="flex items-center gap-2 text-sm font-medium text-white">
+                                    <CirclePlay className="h-4 w-4 text-glow" />
+                                    Audio recebido
+                                  </div>
+                                  {message.file_length ? (
+                                    <span className="text-xs text-slate-400">
+                                      {formatFileLength(message.file_length)}
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <audio
+                                  className="mt-3 w-full"
+                                  controls
+                                  crossOrigin="use-credentials"
+                                  preload="none"
+                                  src={getMessageMediaURL(message)}
                                 >
-                                  Baixar midia
-                                </a>
-                              ) : null}
-                            </div>
+                                  Seu navegador nao suporta reproducao de audio.
+                                </audio>
+                                <div className="mt-3 flex flex-wrap items-center gap-3">
+                                  <button
+                                    className="button-secondary"
+                                    disabled={transcriptState?.loading}
+                                    onClick={() => handleTranscriptRequest(message)}
+                                    type="button"
+                                  >
+                                    {transcriptState?.loading
+                                      ? "Transcrevendo..."
+                                      : transcriptState?.text
+                                        ? "Atualizar transcricao"
+                                        : "Transcrever audio"}
+                                  </button>
+                                  {message.mime_type ? (
+                                    <span className="text-xs text-slate-500">
+                                      {message.mime_type}
+                                    </span>
+                                  ) : null}
+                                </div>
+                                {transcriptState?.text ? (
+                                  <div className="mt-4 rounded-2xl border border-emerald-400/20 bg-emerald-500/5 p-4">
+                                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300">
+                                      Transcricao
+                                    </p>
+                                    <p className="mt-2 text-sm leading-6 text-slate-200">
+                                      {transcriptState.text}
+                                    </p>
+                                    <p className="mt-2 text-[11px] text-slate-500">
+                                      {transcriptState.provider} • {transcriptState.model}
+                                    </p>
+                                  </div>
+                                ) : null}
+                                {transcriptState?.error ? (
+                                  <p className="mt-3 text-xs text-amber-300">
+                                    {transcriptState.error}
+                                  </p>
+                                ) : null}
+                              </div>
+                            ) : null}
                           </div>
-                          <p className="mt-3 text-sm leading-6 text-slate-300">
-                            {message.body || "[sem corpo textual]"}
-                          </p>
-                        </div>
-                      ))
+                        );
+                      })
                     ) : (
                       <EmptyState label="Nenhuma mensagem ainda." />
                     )}

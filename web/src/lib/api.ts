@@ -28,6 +28,7 @@ import type {
   WAContact,
   Instance,
   Message,
+  MessageTranscript,
   BulkSendMessageResponse,
   QueueJobView,
   QueueRequeueResponse,
@@ -206,6 +207,17 @@ export const api = {
     }),
   messages: (token: string, tenantID: string, instanceID?: string) =>
     request<Message[]>("/app/messages", { token, tenantID, instanceID }),
+  messageTranscript: (
+    token: string,
+    tenantID: string,
+    instanceID: string | undefined,
+    messageID: string,
+  ) =>
+    request<MessageTranscript>(`/app/messages/${messageID}/transcript`, {
+      token,
+      tenantID,
+      instanceID,
+    }),
   conversations: (token: string, tenantID: string, instanceID?: string) =>
     request<Conversation[]>("/app/conversations", { token, tenantID, instanceID }),
   updateConversation: (
@@ -570,10 +582,12 @@ export function makeMediaDownloadURL(
   tenantID: string,
   instanceID: string | undefined,
   messageID: string,
+  download = false,
 ) {
   const url = new URL(`/app/messages/${messageID}/media`, getAPIBaseURL());
   url.searchParams.set("tenant_id", tenantID);
   if (instanceID) url.searchParams.set("instance_id", instanceID);
+  if (download) url.searchParams.set("download", "1");
   return url.toString();
 }
 

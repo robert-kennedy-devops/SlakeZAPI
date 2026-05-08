@@ -18,7 +18,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
 # ── Stage 2: Run ────────────────────────────────────────────
 FROM alpine:3.22
 
-RUN apk add --no-cache ca-certificates tzdata wget
+RUN apk add --no-cache ca-certificates tzdata wget ffmpeg
 
 # Copy the binary
 COPY --from=builder /api /api

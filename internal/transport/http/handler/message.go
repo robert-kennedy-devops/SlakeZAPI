@@ -490,9 +490,29 @@ func (h *MessageHandler) GetMedia(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/octet-stream")
 	}
 	if resp.FileName != "" {
-		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": resp.FileName}))
+		disposition := "inline"
+		if r.URL.Query().Get("download") == "1" {
+			disposition = "attachment"
+		}
+		w.Header().Set("Content-Disposition", mime.FormatMediaType(disposition, map[string]string{"filename": resp.FileName}))
 	}
 	w.Header().Set("Content-Length", strconv.Itoa(len(resp.Data)))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(resp.Data)
+}
+
+func (h *MessageHandler) GetTranscript(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.TenantFromCtx(r.Context())
+	if tenantID == "" {
+		httputil.Error(w, http.StatusUnauthorized, "missing tenant context")
+		return
+	}
+
+	resp, err := h.msgUC.GetMessageTranscript(r.Context(), tenantID, middleware.InstanceFromCtx(r.Context()), r.PathValue("id"))
+	if err != nil {
+		httputil.DomainError(w, err)
+		return
+	}
+
+	httputil.JSON(w, http.StatusOK, resp)
 }

@@ -203,3 +203,7 @@ type AuditLogRepository interface {
 	Create(ctx context.Context, item *AuditLog) error
 	List(ctx context.Context, tenantID, instanceID, actionPrefix string, limit int) ([]AuditLog, error)
 }
+
+type AudioTranscriber interface {
+	Transcribe(ctx context.Context, fileName, mimeType string, data []byte) (*MessageTranscript, error)
+}

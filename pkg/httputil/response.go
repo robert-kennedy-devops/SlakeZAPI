@@ -67,8 +67,11 @@ func DomainError(w http.ResponseWriter, err error) {
 	case errors.Is(err, domain.ErrBadRequest),
 		errors.Is(err, domain.ErrInvalidPhone),
 		errors.Is(err, domain.ErrNoSubscription),
-		errors.Is(err, domain.ErrMessageMediaAbsent):
+		errors.Is(err, domain.ErrMessageMediaAbsent),
+		errors.Is(err, domain.ErrMessageTranscriptType):
 		Error(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, domain.ErrMessageTranscriptOff):
+		Error(w, http.StatusNotImplemented, err.Error())
 	case errors.Is(err, domain.ErrTenantAccessDenied),
 		errors.Is(err, domain.ErrUserRoleForbidden):
 		Error(w, http.StatusForbidden, err.Error())

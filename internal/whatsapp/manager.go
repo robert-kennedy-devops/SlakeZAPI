@@ -679,11 +679,17 @@ func (m *Manager) handleEvent(tenantID, instanceID string, evt interface{}) {
 		if event.Info.IsFromMe {
 			return
 		}
-		body := extractMessageText(event.Message)
-		if body == "" {
-			body = "[unsupported]"
+		if _, err := m.msgRepo.GetByWhatsAppID(ctx, tenantID, instanceID, event.Info.ID); err == nil {
+			return
+		} else if !errors.Is(err, domain.ErrMessageNotFound) {
+			m.log.Error("failed to check inbound message idempotency", map[string]interface{}{"err": err.Error(), "whatsapp_id": event.Info.ID})
+			return
 		}
 		meta := extractMessageMeta(event.Message)
+		body := extractMessageText(event.Message)
+		if body == "" {
+			body = defaultInboundMessageBody(meta.msgType)
+		}
 		msg := &domain.Message{
 			ID:            event.Info.ID,
 			TenantID:      tenantID,
@@ -828,6 +834,21 @@ func extractMessageText(msg *waProto.Message) string {
 		return msg.GetDocumentMessage().GetCaption()
 	default:
 		return ""
+	}
+}
+
+func defaultInboundMessageBody(msgType string) string {
+	switch msgType {
+	case "audio":
+		return "[audio recebido]"
+	case "image":
+		return "[imagem recebida]"
+	case "video":
+		return "[video recebido]"
+	case "document":
+		return "[documento recebido]"
+	default:
+		return "[unsupported]"
 	}
 }
 
@@ -1694,7 +1715,7 @@ func (m *Manager) ForwardMessage(ctx context.Context, tenantID, instanceID strin
 		ExtendedTextMessage: &waProto.ExtendedTextMessage{
 			Text: proto.String(req.Message),
 			ContextInfo: &waProto.ContextInfo{
-				IsForwarded:    &isForwarded,
+				IsForwarded:     &isForwarded,
 				ForwardingScore: &score,
 			},
 		},

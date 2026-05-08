@@ -23,14 +23,19 @@ func (r *messageRepo) Create(ctx context.Context, m *domain.Message) error {
 		INSERT INTO messages
 			(id, tenant_id, instance_id, whatsapp_id, phone, body, type, mime_type, file_name, media_url, direct_path, file_length, media_key, file_sha256, file_enc_sha256, direction, status, sent_at, created_at)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+		ON CONFLICT DO NOTHING
 	`
-	_, err := r.db.ExecContext(ctx, q,
+	result, err := r.db.ExecContext(ctx, q,
 		m.ID, m.TenantID, nullableString(m.InstanceID), m.WhatsAppID, m.Phone,
 		m.Body, m.Type, m.MimeType, m.FileName, m.MediaURL, m.DirectPath, m.FileLength,
 		m.MediaKey, m.FileSHA256, m.FileEncSHA256, m.Direction, string(m.Status), m.SentAt, m.CreatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("messageRepo.Create: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err == nil && rowsAffected == 0 {
+		return nil
 	}
 	if err := r.upsertConversation(ctx, m); err != nil {
 		return fmt.Errorf("messageRepo.Create conversation: %w", err)

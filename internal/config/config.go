@@ -39,7 +39,7 @@ type Config struct {
 	WebhookRetries int
 
 	// Rate Limiting
-	RateLimitRPS    int // requests per second per tenant
+	RateLimitRPS     int // requests per second per tenant
 	AuthRateLimitRPM int // requests per minute per IP for auth endpoints
 
 	// Metrics
@@ -47,6 +47,10 @@ type Config struct {
 
 	// CORS
 	CORSAllowedOrigins []string
+
+	// AI
+	OpenAIAPIKey             string
+	OpenAITranscriptionModel string
 }
 
 func Load() (*Config, error) {
@@ -71,6 +75,8 @@ func Load() (*Config, error) {
 		RateLimitRPS:              getIntEnv("RATE_LIMIT_RPS", 10),
 		AuthRateLimitRPM:          getIntEnv("AUTH_RATE_LIMIT_RPM", 20),
 		MetricsToken:              getEnv("METRICS_TOKEN", ""),
+		OpenAIAPIKey:              getEnv("OPENAI_API_KEY", ""),
+		OpenAITranscriptionModel:  getEnv("OPENAI_TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe"),
 		CORSAllowedOrigins: getListEnv("CORS_ALLOWED_ORIGINS", []string{
 			"http://localhost:3000",
 		}),

@@ -123,6 +123,135 @@ func (f *fakeWhatsAppService) ListContacts(ctx context.Context, tenantID, instan
 	return []domain.WAContact{}, nil
 }
 
+func (f *fakeWhatsAppService) SendLocationMessage(ctx context.Context, tenantID, instanceID string, req domain.LocationMessageRequest) (string, error) {
+	return "wa-location-1", nil
+}
+
+func (f *fakeWhatsAppService) SendContactCard(ctx context.Context, tenantID, instanceID string, req domain.ContactCardRequest) (string, error) {
+	return "wa-contact-1", nil
+}
+
+func (f *fakeWhatsAppService) SendSticker(ctx context.Context, tenantID, instanceID string, req domain.SendMediaMessageRequest) (string, error) {
+	return "wa-sticker-1", nil
+}
+
+func (f *fakeWhatsAppService) ReactToMessage(ctx context.Context, tenantID, instanceID string, req domain.ReactMessageRequest) error {
+	return nil
+}
+
+func (f *fakeWhatsAppService) DeleteMessage(ctx context.Context, tenantID, instanceID string, req domain.DeleteMessageRequest) error {
+	return nil
+}
+
+func (f *fakeWhatsAppService) SendQuotedMessage(ctx context.Context, tenantID, instanceID string, req domain.QuotedSendRequest) (string, error) {
+	return "wa-quoted-1", nil
+}
+
+func (f *fakeWhatsAppService) GetGroupInfo(ctx context.Context, tenantID, instanceID, groupJID string) (*domain.Group, error) {
+	return &domain.Group{JID: groupJID, Name: "Grupo teste"}, nil
+}
+
+func (f *fakeWhatsAppService) CreateGroup(ctx context.Context, tenantID, instanceID string, req domain.CreateGroupRequest) (*domain.Group, error) {
+	return &domain.Group{
+		JID:              "120363111111111111@g.us",
+		Name:             req.Name,
+		ParticipantCount: len(req.Participants),
+	}, nil
+}
+
+func (f *fakeWhatsAppService) UpdateGroupParticipants(ctx context.Context, tenantID, instanceID string, req domain.UpdateGroupParticipantsRequest) error {
+	return nil
+}
+
+func (f *fakeWhatsAppService) UpdateGroupInfo(ctx context.Context, tenantID, instanceID string, req domain.UpdateGroupInfoRequest) error {
+	return nil
+}
+
+func (f *fakeWhatsAppService) GetGroupInviteLink(ctx context.Context, tenantID, instanceID, groupJID string) (*domain.GroupInviteLink, error) {
+	return &domain.GroupInviteLink{
+		GroupJID:   groupJID,
+		InviteLink: "https://chat.whatsapp.com/test-link",
+	}, nil
+}
+
+func (f *fakeWhatsAppService) LeaveGroup(ctx context.Context, tenantID, instanceID, groupJID string) error {
+	return nil
+}
+
+func (f *fakeWhatsAppService) BlockContact(ctx context.Context, tenantID, instanceID, phone string) error {
+	return nil
+}
+
+func (f *fakeWhatsAppService) UnblockContact(ctx context.Context, tenantID, instanceID, phone string) error {
+	return nil
+}
+
+func (f *fakeWhatsAppService) GetContactAvatar(ctx context.Context, tenantID, instanceID, phone string) (*domain.ContactAvatar, error) {
+	return &domain.ContactAvatar{Phone: phone, URL: "https://example.com/avatar.jpg"}, nil
+}
+
+func (f *fakeWhatsAppService) GetProfile(ctx context.Context, tenantID, instanceID string) (*domain.InstanceProfile, error) {
+	return &domain.InstanceProfile{
+		InstanceID: instanceID,
+		Phone:      "5511999999999",
+		Name:       "Conta Teste",
+	}, nil
+}
+
+func (f *fakeWhatsAppService) UpdateProfile(ctx context.Context, tenantID, instanceID string, req domain.UpdateProfileRequest) error {
+	return nil
+}
+
+func (f *fakeWhatsAppService) GetPrivacySettings(ctx context.Context, tenantID, instanceID string) (*domain.PrivacySettings, error) {
+	return &domain.PrivacySettings{
+		LastSeen:     "contacts",
+		ProfilePhoto: "contacts",
+		Status:       "contacts",
+		ReadReceipts: true,
+		GroupAdd:     "contacts",
+	}, nil
+}
+
+func (f *fakeWhatsAppService) UpdatePrivacySettings(ctx context.Context, tenantID, instanceID string, req domain.UpdatePrivacyRequest) error {
+	return nil
+}
+
+func (f *fakeWhatsAppService) ArchiveChat(ctx context.Context, tenantID, instanceID string, req domain.ArchiveChatRequest) error {
+	return nil
+}
+
+func (f *fakeWhatsAppService) MuteChat(ctx context.Context, tenantID, instanceID string, req domain.MuteChatRequest) error {
+	return nil
+}
+
+func (f *fakeWhatsAppService) PinChat(ctx context.Context, tenantID, instanceID string, req domain.PinChatRequest) error {
+	return nil
+}
+
+func (f *fakeWhatsAppService) MarkChatRead(ctx context.Context, tenantID, instanceID string, req domain.MarkChatReadRequest) error {
+	return nil
+}
+
+func (f *fakeWhatsAppService) EditMessage(ctx context.Context, tenantID, instanceID string, req domain.EditMessageRequest) error {
+	return nil
+}
+
+func (f *fakeWhatsAppService) ForwardMessage(ctx context.Context, tenantID, instanceID string, req domain.ForwardMessageRequest) (string, error) {
+	return "wa-forward-1", nil
+}
+
+func (f *fakeWhatsAppService) StarMessage(ctx context.Context, tenantID, instanceID string, req domain.StarMessageRequest) error {
+	return nil
+}
+
+func (f *fakeWhatsAppService) PairPhone(ctx context.Context, tenantID, instanceID, phone string) (string, error) {
+	return "PAIR-CODE", nil
+}
+
+func (f *fakeWhatsAppService) RestartInstance(ctx context.Context, tenantID, instanceID string) error {
+	return nil
+}
+
 func TestRouterBootstrapAndSendMessageFlow(t *testing.T) {
 	db := testutil.OpenTestDB(t)
 	server := newIntegrationServer(t, db)

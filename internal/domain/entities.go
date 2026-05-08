@@ -244,10 +244,10 @@ type Group struct {
 }
 
 type GroupParticipant struct {
-	JID         string `json:"jid"`
-	Phone       string `json:"phone"`
-	IsAdmin     bool   `json:"is_admin"`
-	IsSuperAdmin bool  `json:"is_super_admin"`
+	JID          string `json:"jid"`
+	Phone        string `json:"phone"`
+	IsAdmin      bool   `json:"is_admin"`
+	IsSuperAdmin bool   `json:"is_super_admin"`
 }
 
 type CreateGroupRequest struct {
@@ -323,11 +323,11 @@ type ContactAvatar struct {
 }
 
 type InstanceConfigRequest struct {
-	InstanceID        string  `json:"instance_id,omitempty"`
-	AutoReadMessages  *bool   `json:"auto_read_messages,omitempty"`
-	AutoReadStatus    *bool   `json:"auto_read_status,omitempty"`
-	AutoRejectCalls   *bool   `json:"auto_reject_calls,omitempty"`
-	RejectCallMessage string  `json:"reject_call_message,omitempty"`
+	InstanceID        string `json:"instance_id,omitempty"`
+	AutoReadMessages  *bool  `json:"auto_read_messages,omitempty"`
+	AutoReadStatus    *bool  `json:"auto_read_status,omitempty"`
+	AutoRejectCalls   *bool  `json:"auto_reject_calls,omitempty"`
+	RejectCallMessage string `json:"reject_call_message,omitempty"`
 }
 
 type WAContact struct {
@@ -508,10 +508,10 @@ type ReactMessageRequest struct {
 }
 
 type DeleteMessageRequest struct {
-	InstanceID string `json:"instance_id,omitempty"`
-	Phone      string `json:"phone"`
-	MessageID  string `json:"message_id"`
-	ForEveryone bool  `json:"for_everyone"`
+	InstanceID  string `json:"instance_id,omitempty"`
+	Phone       string `json:"phone"`
+	MessageID   string `json:"message_id"`
+	ForEveryone bool   `json:"for_everyone"`
 }
 
 type QuotedSendRequest struct {
@@ -596,6 +596,12 @@ type MediaDownload struct {
 	FileName string
 	MimeType string
 	Data     []byte
+}
+
+type MessageTranscript struct {
+	Text     string `json:"text"`
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
 }
 
 type CreateAPIKeyRequest struct {

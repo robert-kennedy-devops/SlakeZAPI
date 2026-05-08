@@ -33,9 +33,12 @@ var (
 	ErrQRTimeout           = errors.New("QR code scan timeout")
 
 	// Messages
-	ErrMessageNotFound    = errors.New("message not found")
-	ErrMessageMediaAbsent = errors.New("message has no downloadable media")
-	ErrInvalidPhone       = errors.New("invalid phone number")
+	ErrMessageNotFound         = errors.New("message not found")
+	ErrMessageMediaAbsent      = errors.New("message has no downloadable media")
+	ErrMessageTranscriptOff    = errors.New("audio transcription is not configured")
+	ErrMessageTranscriptType   = errors.New("message type does not support transcription")
+	ErrMessageTranscriptFailed = errors.New("failed to transcribe audio")
+	ErrInvalidPhone            = errors.New("invalid phone number")
 
 	// Webhook
 	ErrWebhookNotFound         = errors.New("webhook not found")

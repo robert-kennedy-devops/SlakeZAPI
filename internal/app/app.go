@@ -13,6 +13,7 @@ import (
 	"github.com/whatsapp-saas/api/internal/observability"
 	"github.com/whatsapp-saas/api/internal/queue"
 	"github.com/whatsapp-saas/api/internal/repository"
+	"github.com/whatsapp-saas/api/internal/transcription"
 	transportHTTP "github.com/whatsapp-saas/api/internal/transport/http"
 	"github.com/whatsapp-saas/api/internal/transport/ws"
 	"github.com/whatsapp-saas/api/internal/usecase"
@@ -81,6 +82,9 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 		cfg.UserAccessTokenTTL, cfg.UserRefreshTokenTTL, log,
 	)
 	msgUC := usecase.NewMessageUsecase(msgRepo, instanceRepo, campaignRepo, waMgr, billingSvc, eventBus, log)
+	if transcriber := transcription.NewOpenAITranscriber(cfg.OpenAIAPIKey, cfg.OpenAITranscriptionModel); transcriber != nil {
+		msgUC.SetAudioTranscriber(transcriber)
+	}
 	waUC := usecase.NewWhatsAppUsecase(waMgr, instanceRepo, eventBus, log)
 	instanceUC := usecase.NewInstanceUsecase(tenantRepo, instanceRepo, log)
 	billingUC := usecase.NewBillingUsecase(billingSvc, log)
