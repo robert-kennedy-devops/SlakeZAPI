@@ -559,12 +559,15 @@ func newIntegrationServer(t *testing.T, db *sql.DB) http.Handler {
 		hub,
 		metrics,
 		time.Now().UTC(),
-		1000,
+		1000, // rateRPS
+		60,   // authRateLimitRPM
+		"",   // metricsToken (open for tests)
 		[]string{"http://localhost:3000"},
 		"slakezapi_rt_test",
 		false,
 		"",
 		"lax",
+		"test-bootstrap-secret",
 		log,
 	)
 }

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"mime"
 	"net/http"
 	"strconv"
 
@@ -293,7 +294,7 @@ func (h *MessageHandler) GetMedia(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/octet-stream")
 	}
 	if resp.FileName != "" {
-		w.Header().Set("Content-Disposition", `attachment; filename="`+resp.FileName+`"`)
+		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": resp.FileName}))
 	}
 	w.Header().Set("Content-Length", strconv.Itoa(len(resp.Data)))
 	w.WriteHeader(http.StatusOK)

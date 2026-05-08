@@ -20,8 +20,13 @@ func JSON(w http.ResponseWriter, status int, v interface{}) {
 	json.NewEncoder(w).Encode(v)
 }
 
-// Decode reads JSON body into v.
+// maxBodyBytes is the maximum request body size accepted by Decode.
+// Requests larger than this are rejected with 413 before decoding starts.
+const maxBodyBytes = 1 << 20 // 1 MiB
+
+// Decode reads JSON body into v, rejecting bodies larger than 1 MiB.
 func Decode(r *http.Request, v interface{}) error {
+	r.Body = http.MaxBytesReader(nil, r.Body, maxBodyBytes)
 	defer r.Body.Close()
 	return json.NewDecoder(r.Body).Decode(v)
 }

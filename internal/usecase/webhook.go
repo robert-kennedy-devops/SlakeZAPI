@@ -4,6 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
+	"net"
+	"net/url"
 	"time"
 
 	"github.com/google/uuid"
@@ -44,6 +47,10 @@ func (u *WebhookUsecase) Register(ctx context.Context, tenantID string, req doma
 	}
 	if !sub.Plan.WebhookEnabled {
 		return nil, domain.ErrBadRequest
+	}
+
+	if err := validateWebhookURL(req.URL); err != nil {
+		return nil, err
 	}
 
 	secret, _ := generateSecret()
@@ -163,4 +170,80 @@ func generateSecret() (string, error) {
 	b := make([]byte, 20)
 	_, err := rand.Read(b)
 	return hex.EncodeToString(b), err
+}
+
+// validateWebhookURL rejects URLs that would allow SSRF attacks.
+// Only public HTTPS (or HTTP in dev) targets are permitted; loopback,
+// private ranges, link-local, and non-HTTP schemes are all blocked.
+func validateWebhookURL(raw string) error {
+	if raw == "" {
+		return fmt.Errorf("%w: webhook url is required", domain.ErrBadRequest)
+	}
+
+	parsed, err := url.ParseRequestURI(raw)
+	if err != nil {
+		return fmt.Errorf("%w: invalid webhook url", domain.ErrBadRequest)
+	}
+	if parsed.Scheme != "https" && parsed.Scheme != "http" {
+		return fmt.Errorf("%w: webhook url must use http or https", domain.ErrBadRequest)
+	}
+
+	hostname := parsed.Hostname()
+	if hostname == "" {
+		return fmt.Errorf("%w: webhook url missing host", domain.ErrBadRequest)
+	}
+
+	// Resolve the hostname to catch DNS rebinding to private IPs.
+	addrs, err := net.LookupHost(hostname)
+	if err != nil {
+		return fmt.Errorf("%w: webhook url host could not be resolved", domain.ErrBadRequest)
+	}
+	for _, addr := range addrs {
+		ip := net.ParseIP(addr)
+		if ip == nil {
+			continue
+		}
+		if isPrivateIP(ip) {
+			return fmt.Errorf("%w: webhook url must not target private or reserved addresses", domain.ErrBadRequest)
+		}
+	}
+	return nil
+}
+
+// privateRanges lists all IP ranges that must not be reachable via webhook.
+var privateRanges = func() []*net.IPNet {
+	blocks := []string{
+		"127.0.0.0/8",    // loopback
+		"::1/128",        // IPv6 loopback
+		"10.0.0.0/8",     // RFC1918
+		"172.16.0.0/12",  // RFC1918
+		"192.168.0.0/16", // RFC1918
+		"169.254.0.0/16", // link-local (AWS metadata, etc.)
+		"fe80::/10",      // IPv6 link-local
+		"fc00::/7",       // IPv6 unique-local
+		"100.64.0.0/10",  // shared address space (RFC6598)
+		"0.0.0.0/8",      // "this" network
+		"192.0.2.0/24",   // TEST-NET-1
+		"198.51.100.0/24", // TEST-NET-2
+		"203.0.113.0/24", // TEST-NET-3
+		"240.0.0.0/4",    // reserved
+	}
+	nets := make([]*net.IPNet, 0, len(blocks))
+	for _, b := range blocks {
+		_, ipNet, _ := net.ParseCIDR(b)
+		nets = append(nets, ipNet)
+	}
+	return nets
+}()
+
+func isPrivateIP(ip net.IP) bool {
+	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+		return true
+	}
+	for _, block := range privateRanges {
+		if block.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }

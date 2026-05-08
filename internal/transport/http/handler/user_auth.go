@@ -14,19 +14,21 @@ import (
 )
 
 type UserAuthHandler struct {
-	userAuthUC            *usecase.UserAuthUsecase
-	log                   *logger.Logger
-	metrics               *observability.Metrics
-	sessionCookieName     string
-	sessionCookieSecure   bool
-	sessionCookieDomain   string
-	sessionCookieSameSite http.SameSite
+	userAuthUC             *usecase.UserAuthUsecase
+	log                    *logger.Logger
+	metrics                *observability.Metrics
+	sessionCookieName      string
+	accessTokenCookieName  string
+	sessionCookieSecure    bool
+	sessionCookieDomain    string
+	sessionCookieSameSite  http.SameSite
 }
 
 func NewUserAuthHandler(
 	userAuthUC *usecase.UserAuthUsecase,
 	metrics *observability.Metrics,
 	sessionCookieName string,
+	accessTokenCookieName string,
 	sessionCookieSecure bool,
 	sessionCookieDomain string,
 	sessionCookieSameSite string,
@@ -37,6 +39,7 @@ func NewUserAuthHandler(
 		metrics:               metrics,
 		log:                   log,
 		sessionCookieName:     sessionCookieName,
+		accessTokenCookieName: accessTokenCookieName,
 		sessionCookieSecure:   sessionCookieSecure,
 		sessionCookieDomain:   sessionCookieDomain,
 		sessionCookieSameSite: parseSameSite(sessionCookieSameSite),
@@ -59,6 +62,7 @@ func (h *UserAuthHandler) SignUp(w http.ResponseWriter, r *http.Request) {
 	}
 	h.trackAuth("signup", "success")
 	h.setRefreshCookie(w, refreshToken, resp.RefreshExpiresAt)
+	h.setAccessTokenCookie(w, resp.Token, resp.ExpiresAt)
 	h.log.WithContext(r.Context()).Audit("app.auth.signup", map[string]interface{}{
 		"user_id":   resp.User.ID,
 		"tenant_id": resp.Tenant.ID,
@@ -84,6 +88,7 @@ func (h *UserAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 	h.trackAuth("login", "success")
 	h.setRefreshCookie(w, refreshToken, resp.RefreshExpiresAt)
+	h.setAccessTokenCookie(w, resp.Token, resp.ExpiresAt)
 	h.log.WithContext(r.Context()).Audit("app.auth.login", map[string]interface{}{
 		"user_id":   resp.User.ID,
 		"tenant_id": resp.Tenant.ID,
@@ -127,6 +132,7 @@ func (h *UserAuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		"session_id": sessionID,
 	})
 	h.clearRefreshCookie(w)
+	h.clearAccessTokenCookie(w)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -152,6 +158,7 @@ func (h *UserAuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	}
 	h.trackAuth("refresh", "success")
 	h.setRefreshCookie(w, nextRefreshToken, resp.RefreshExpiresAt)
+	h.setAccessTokenCookie(w, resp.Token, resp.ExpiresAt)
 	h.log.WithContext(r.Context()).Audit("app.auth.refresh", map[string]interface{}{
 		"user_id":   resp.User.ID,
 		"tenant_id": resp.Tenant.ID,
@@ -227,6 +234,40 @@ func (h *UserAuthHandler) UpdateMemberRole(w http.ResponseWriter, r *http.Reques
 		"role":      req.Role,
 	})
 	httputil.JSON(w, http.StatusOK, resp)
+}
+
+func (h *UserAuthHandler) setAccessTokenCookie(w http.ResponseWriter, token string, expiresAt time.Time) {
+	if h.accessTokenCookieName == "" {
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     h.accessTokenCookieName,
+		Value:    token,
+		Path:     "/",
+		Domain:   h.sessionCookieDomain,
+		HttpOnly: true,
+		Secure:   h.sessionCookieSecure,
+		SameSite: h.sessionCookieSameSite,
+		Expires:  expiresAt,
+		MaxAge:   int(time.Until(expiresAt).Seconds()),
+	})
+}
+
+func (h *UserAuthHandler) clearAccessTokenCookie(w http.ResponseWriter) {
+	if h.accessTokenCookieName == "" {
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     h.accessTokenCookieName,
+		Value:    "",
+		Path:     "/",
+		Domain:   h.sessionCookieDomain,
+		HttpOnly: true,
+		Secure:   h.sessionCookieSecure,
+		SameSite: h.sessionCookieSameSite,
+		MaxAge:   -1,
+		Expires:  time.Unix(0, 0).UTC(),
+	})
 }
 
 func (h *UserAuthHandler) setRefreshCookie(w http.ResponseWriter, token string, expiresAt time.Time) {

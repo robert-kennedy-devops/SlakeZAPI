@@ -18,6 +18,7 @@ type Config struct {
 	DBMaxConnections int
 
 	// Auth
+	BootstrapSecret           string // empty = bootstrap endpoint disabled
 	APIKeySalt                string
 	UserAccessTokenTTL        time.Duration
 	UserRefreshTokenTTL       time.Duration
@@ -38,7 +39,11 @@ type Config struct {
 	WebhookRetries int
 
 	// Rate Limiting
-	RateLimitRPS int // requests per second per tenant
+	RateLimitRPS    int // requests per second per tenant
+	AuthRateLimitRPM int // requests per minute per IP for auth endpoints
+
+	// Metrics
+	MetricsToken string // if set, GET /metrics requires Authorization: Bearer <token>
 
 	// CORS
 	CORSAllowedOrigins []string
@@ -50,6 +55,7 @@ func Load() (*Config, error) {
 		ShutdownTimeout:           getDurationEnv("SHUTDOWN_TIMEOUT", 10*time.Second),
 		DatabaseURL:               getEnv("DATABASE_URL", ""),
 		DBMaxConnections:          getIntEnv("DB_MAX_CONNECTIONS", 20),
+		BootstrapSecret:           getEnv("BOOTSTRAP_SECRET", ""),
 		APIKeySalt:                getEnv("API_KEY_SALT", "change-me-in-production"),
 		UserAccessTokenTTL:        getDurationEnv("USER_ACCESS_TOKEN_TTL", 15*time.Minute),
 		UserRefreshTokenTTL:       getDurationEnv("USER_REFRESH_TOKEN_TTL", 7*24*time.Hour),
@@ -63,6 +69,8 @@ func Load() (*Config, error) {
 		WebhookTimeout:            getDurationEnv("WEBHOOK_TIMEOUT", 10*time.Second),
 		WebhookRetries:            getIntEnv("WEBHOOK_RETRIES", 3),
 		RateLimitRPS:              getIntEnv("RATE_LIMIT_RPS", 10),
+		AuthRateLimitRPM:          getIntEnv("AUTH_RATE_LIMIT_RPM", 20),
+		MetricsToken:              getEnv("METRICS_TOKEN", ""),
 		CORSAllowedOrigins: getListEnv("CORS_ALLOWED_ORIGINS", []string{
 			"http://localhost:3000",
 		}),

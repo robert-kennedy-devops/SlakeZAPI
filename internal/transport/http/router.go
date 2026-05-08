@@ -33,19 +33,26 @@ func NewRouter(
 	metrics *observability.Metrics,
 	startedAt time.Time,
 	rateRPS int,
+	authRateLimitRPM int,
+	metricsToken string,
 	corsAllowedOrigins []string,
 	userSessionCookieName string,
 	userSessionCookieSecure bool,
 	userSessionCookieDomain string,
 	userSessionCookieSameSite string,
+	bootstrapSecret string,
 	log *logger.Logger,
 ) http.Handler {
+	// ── Derived config ───────────────────────────────────────────────────────
+	accessTokenCookie := userSessionCookieName + "_at"
+
 	// ── Handlers ────────────────────────────────────────────────────────────
 	authH := handler.NewAuthHandler(authUC, log)
 	userAuthH := handler.NewUserAuthHandler(
 		userAuthUC,
 		metrics,
 		userSessionCookieName,
+		accessTokenCookie,
 		userSessionCookieSecure,
 		userSessionCookieDomain,
 		userSessionCookieSameSite,
@@ -62,16 +69,18 @@ func NewRouter(
 	obsH := handler.NewObservabilityHandler(db, pool, metrics, startedAt)
 
 	// ── Middleware chain builders ────────────────────────────────────────────
+	authIPLimit := middleware.IPRateLimit(authRateLimitRPM)
+
 	withAuth := func(h http.HandlerFunc) http.Handler {
 		return middleware.Auth(authUC, log)(
 			middleware.RateLimit(rateRPS)(h),
 		)
 	}
 	withUserAuth := func(h http.HandlerFunc) http.Handler {
-		return middleware.UserAuth(userAuthUC, log)(h)
+		return middleware.UserAuth(userAuthUC, accessTokenCookie, log)(h)
 	}
 	withUserRole := func(h http.HandlerFunc, roles ...domain.UserRole) http.Handler {
-		return middleware.UserAuth(userAuthUC, log)(
+		return middleware.UserAuth(userAuthUC, accessTokenCookie, log)(
 			middleware.RequireUserRole(roles...)(h),
 		)
 	}
@@ -83,13 +92,13 @@ func NewRouter(
 	mux.HandleFunc("GET /health", obsH.Health)
 	mux.HandleFunc("GET /readyz", obsH.Readyz)
 	mux.HandleFunc("GET /livez", obsH.Livez)
-	mux.Handle("GET /metrics", metrics.Handler())
+	mux.Handle("GET /metrics", middleware.MetricsAuth(metricsToken)(metrics.Handler()))
 	mux.HandleFunc("GET /docs", docsH.Index)
 	mux.HandleFunc("GET /docs/{name}", docsH.Serve)
-	mux.HandleFunc("POST /auth/bootstrap", authH.Bootstrap)
-	mux.HandleFunc("POST /app/auth/signup", userAuthH.SignUp)
-	mux.HandleFunc("POST /app/auth/login", userAuthH.Login)
-	mux.HandleFunc("POST /app/auth/refresh", userAuthH.Refresh)
+	mux.Handle("POST /auth/bootstrap", middleware.BootstrapAuth(bootstrapSecret)(http.HandlerFunc(authH.Bootstrap)))
+	mux.Handle("POST /app/auth/signup", authIPLimit(http.HandlerFunc(userAuthH.SignUp)))
+	mux.Handle("POST /app/auth/login", authIPLimit(http.HandlerFunc(userAuthH.Login)))
+	mux.Handle("POST /app/auth/refresh", authIPLimit(http.HandlerFunc(userAuthH.Refresh)))
 	mux.Handle("POST /app/auth/logout", withUserAuth(userAuthH.Logout))
 	mux.Handle("GET /app/auth/me", withUserAuth(userAuthH.Me))
 	mux.Handle("GET /app/tenant/summary", withUserRole(authH.Me, domain.UserRoleOwner, domain.UserRoleAdmin, domain.UserRoleOperator, domain.UserRoleViewer))

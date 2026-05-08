@@ -105,8 +105,11 @@ func New(cfg *config.Config, log *logger.Logger) (*App, error) {
 		authUC, userAuthUC, msgUC, waUC, webhookUC, billingUC,
 		instanceUC, campaignUC,
 		opsUC, auditUC,
-		hub, metrics, startedAt, cfg.RateLimitRPS, cfg.CORSAllowedOrigins,
-		cfg.UserSessionCookieName, cfg.UserSessionCookieSecure, cfg.UserSessionCookieDomain, cfg.UserSessionCookieSameSite, log,
+		hub, metrics, startedAt,
+		cfg.RateLimitRPS, cfg.AuthRateLimitRPM, cfg.MetricsToken,
+		cfg.CORSAllowedOrigins,
+		cfg.UserSessionCookieName, cfg.UserSessionCookieSecure, cfg.UserSessionCookieDomain, cfg.UserSessionCookieSameSite,
+		cfg.BootstrapSecret, log,
 	)
 
 	server := &http.Server{

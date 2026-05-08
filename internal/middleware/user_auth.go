@@ -15,10 +15,17 @@ type userCtxKey struct{}
 type sessionCtxKey struct{}
 type userRoleCtxKey struct{}
 
-func UserAuth(userAuthUC *usecase.UserAuthUsecase, log *logger.Logger) func(http.Handler) http.Handler {
+func UserAuth(userAuthUC *usecase.UserAuthUsecase, accessTokenCookie string, log *logger.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			raw := extractBearer(r)
+			// Fallback: browser-initiated requests (WebSocket upgrade, <img> loads)
+			// send cookies but cannot set Authorization headers.
+			if raw == "" && accessTokenCookie != "" {
+				if c, err := r.Cookie(accessTokenCookie); err == nil {
+					raw = strings.TrimSpace(c.Value)
+				}
+			}
 			if raw == "" {
 				httputil.Error(w, http.StatusUnauthorized, "missing Authorization header")
 				return

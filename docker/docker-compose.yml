@@ -29,6 +29,8 @@ services:
         condition: service_healthy
     environment:
       HTTP_PORT: 8080
+      # sslmode=disable is acceptable inside Docker's internal network (no external exposure).
+      # For production deployments with an external or managed database use sslmode=require or verify-full.
       DATABASE_URL: postgres://${POSTGRES_USER:-saas}:${POSTGRES_PASSWORD:-saaspassword}@postgres:5432/${POSTGRES_DB:-whatsapp_saas}?sslmode=disable
       API_KEY_SALT: ${API_KEY_SALT:-change-me-in-production}
       WHATSAPP_DATA_PATH: /data/whatsapp

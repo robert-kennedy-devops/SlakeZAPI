@@ -254,11 +254,7 @@ X-Instance-ID: <instance_id>
 
 Se `X-Instance-ID` nao for enviado, a API usa a instancia padrao do tenant.
 
-Para WebSocket do navegador e QR/image endpoints do dashboard, o token também pode ser enviado via query string:
-
-```text
-?access_token=<token>&tenant_id=<tenant_id>
-```
+O WebSocket do dashboard (`/app/ws`) e os endpoints de QR/imagem autenticam via cookie `HttpOnly` definido automaticamente pelo servidor no login — nenhum token precisa ser incluído na URL.
 
 ---
 
@@ -266,9 +262,12 @@ Para WebSocket do navegador e QR/image endpoints do dashboard, o token também p
 
 ### Bootstrap inicial
 
+O endpoint exige o header `X-Bootstrap-Secret` com o valor definido em `BOOTSTRAP_SECRET`. Se a variável estiver vazia, o endpoint retorna `404`.
+
 ```bash
 curl -X POST http://localhost:8080/auth/bootstrap \
   -H "Content-Type: application/json" \
+  -H "X-Bootstrap-Secret: sua_chave_bootstrap" \
   -d '{
     "name": "Tenant Demo",
     "email": "demo@example.com",
@@ -452,10 +451,12 @@ Headers enviados:
 
 ### WebSocket — Eventos em Tempo Real
 
+O token de sessão é enviado automaticamente via cookie `HttpOnly` — não inclua token na URL. O tenant é identificado pelo header `X-Tenant-ID`.
+
 ```javascript
-const ws = new WebSocket(
-  'ws://localhost:8080/app/ws?access_token=sua_sessao&tenant_id=tenant_123'
-);
+// O cookie de sessão é enviado automaticamente pelo browser.
+// Para clients não-browser (ex: Node.js), envie o header Authorization.
+const ws = new WebSocket('ws://localhost:8080/app/ws');
 
 ws.onmessage = (e) => {
   const event = JSON.parse(e.data);
@@ -480,12 +481,18 @@ Quando o limite é excedido, a API retorna `HTTP 402 Payment Required`.
 
 ## 🔐 Segurança
 
-- **API Keys** são armazenadas apenas como hash SHA-256 (salt + key)
-- A chave bruta é retornada **uma única vez** na criação
-- **Webhooks** são assinados via HMAC-SHA256 no header `X-Webhook-Signature`
-- Eventos de webhook são entregues em envelope versionado (`version: "v1"`) com `id` e `timestamp`
-- **Rate limiting** por tenant (token bucket, configurável via `RATE_LIMIT_RPS`)
-- **CORS** configurável para o frontend via `CORS_ALLOWED_ORIGINS`
+- **API Keys** são armazenadas apenas como hash SHA-256 (salt + key); a chave bruta é retornada **uma única vez** na criação
+- **Senhas de usuário** são armazenadas com `bcrypt` (DefaultCost)
+- **Sessão do dashboard**: access token vive somente em memória no browser (nunca em `localStorage`); o refresh token é `HttpOnly` cookie. Em page reload a sessão é recuperada automaticamente via refresh cookie
+- **Webhooks** são assinados via HMAC-SHA256 no header `X-Webhook-Signature`. URLs de webhook são validadas contra SSRF: apenas `http/https` e hosts públicos são aceitos (ranges RFC1918, loopback, link-local e AWS metadata bloqueados)
+- **Bootstrap** (`POST /auth/bootstrap`) exige o header `X-Bootstrap-Secret: <valor>`. Se `BOOTSTRAP_SECRET` não estiver definido, o endpoint retorna `404` (desativado por padrão)
+- **Rate limiting** por tenant (token bucket) em rotas de API — configurável via `RATE_LIMIT_RPS`. Rotas de autenticação (`login`, `signup`, `refresh`) têm rate limit adicional por IP — configurável via `AUTH_RATE_LIMIT_RPM`
+- **`GET /metrics`**: bloqueado para IPs externos se `METRICS_TOKEN` não estiver definido; se definido, exige `Authorization: Bearer <token>`
+- **`Content-Disposition`** é gerado via `mime.FormatMediaType` — nomes de arquivo inbound não podem injetar headers
+- **Corpo das requisições** limitado a 1 MiB via `http.MaxBytesReader`; webhook responses limitadas a 1 MiB
+- **`X-Request-ID`** do cliente é aceito apenas se for UUID canônico — outros valores são substituídos para prevenir log injection
+- **Validação de e-mail** via `net/mail.ParseAddress` no signup e bootstrap
+- **CORS** configurável via `CORS_ALLOWED_ORIGINS`
 
 ## 📈 Observabilidade
 
@@ -548,7 +555,10 @@ Fluxo operacional:
 | `QUEUE_BUFFER_SIZE` | `500` | Buffer da fila de jobs |
 | `WEBHOOK_TIMEOUT` | `10s` | Timeout de entrega de webhook |
 | `WEBHOOK_RETRIES` | `3` | Tentativas de retry (backoff exp.) |
+| `BOOTSTRAP_SECRET` | vazio | Segredo do header `X-Bootstrap-Secret`. Vazio = endpoint desativado (retorna 404) |
 | `RATE_LIMIT_RPS` | `10` | Requisições/segundo por tenant |
+| `AUTH_RATE_LIMIT_RPM` | `20` | Requisições/minuto por IP em rotas de login/signup/refresh |
+| `METRICS_TOKEN` | vazio | Token bearer para `GET /metrics`. Vazio = apenas loopback (127.0.0.1) permitido |
 | `SHUTDOWN_TIMEOUT` | `10s` | Timeout para graceful shutdown |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:3000` | Origins permitidas para o frontend |
 | `USER_ACCESS_TOKEN_TTL` | `15m` | Duração do access token do dashboard |

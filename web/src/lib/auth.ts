@@ -1,44 +1,46 @@
-const TOKEN_KEY = "wsaas.app.token";
-const TOKEN_EXPIRY_KEY = "wsaas.app.token_expiry";
+// Access token lives in module-level memory only — never persisted to
+// localStorage so XSS cannot read it via document.localStorage.
+// On page reload the dashboard recovers the session via the HttpOnly
+// refresh-token cookie by calling POST /app/auth/refresh.
+let _accessToken = "";
+let _tokenExpiry = "";
+
 const TENANT_KEY = "wsaas.app.tenant";
 
-export function getAuthToken() {
-  if (typeof window === "undefined") return "";
-  return window.localStorage.getItem(TOKEN_KEY) ?? "";
+export function getAuthToken(): string {
+  return _accessToken;
 }
 
-export function setAuthToken(token: string) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(TOKEN_KEY, token);
+export function setAuthToken(token: string): void {
+  _accessToken = token;
 }
 
-export function getAuthTokenExpiry() {
-  if (typeof window === "undefined") return "";
-  return window.localStorage.getItem(TOKEN_EXPIRY_KEY) ?? "";
+export function getAuthTokenExpiry(): string {
+  return _tokenExpiry;
 }
 
-export function setAuthTokenExpiry(expiresAt: string) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(TOKEN_EXPIRY_KEY, expiresAt);
+export function setAuthTokenExpiry(expiresAt: string): void {
+  _tokenExpiry = expiresAt;
 }
 
-export function clearAuthToken() {
-  if (typeof window === "undefined") return;
-  window.localStorage.removeItem(TOKEN_KEY);
-  window.localStorage.removeItem(TOKEN_EXPIRY_KEY);
+export function clearAuthToken(): void {
+  _accessToken = "";
+  _tokenExpiry = "";
 }
 
-export function getSelectedTenantID() {
+// Tenant ID is not sensitive — it is just a routing hint stored in
+// localStorage so the correct workspace is pre-selected after reload.
+export function getSelectedTenantID(): string {
   if (typeof window === "undefined") return "";
   return window.localStorage.getItem(TENANT_KEY) ?? "";
 }
 
-export function setSelectedTenantID(tenantID: string) {
+export function setSelectedTenantID(tenantID: string): void {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(TENANT_KEY, tenantID);
 }
 
-export function clearSelectedTenantID() {
+export function clearSelectedTenantID(): void {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(TENANT_KEY);
 }

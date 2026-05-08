@@ -160,12 +160,22 @@ export function DashboardClient() {
 
   useEffect(() => {
     const authToken = getAuthToken();
-    if (!authToken) {
-      router.replace("/login");
+    if (authToken) {
+      setToken(authToken);
+      setTenant(getSelectedTenantID());
       return;
     }
-    setToken(authToken);
-    setTenant(getSelectedTenantID());
+    // No in-memory token (page reload) — recover session via HttpOnly refresh cookie.
+    api
+      .refresh(getSelectedTenantID() || undefined)
+      .then((session) => {
+        setToken(session.token);
+        setTenant(session.tenant?.id ?? getSelectedTenantID());
+        if (session.tenant?.id) setSelectedTenantID(session.tenant.id);
+      })
+      .catch(() => {
+        router.replace("/login");
+      });
   }, [router]);
 
   useEffect(() => {
@@ -290,7 +300,7 @@ export function DashboardClient() {
 
   useEffect(() => {
     if (!token || !tenantHeader || !instanceHeader) return;
-    const socket = new WebSocket(makeWSURL(token, tenantHeader, instanceHeader));
+    const socket = new WebSocket(makeWSURL(tenantHeader, instanceHeader));
     socket.onmessage = (event) => {
       const payload = JSON.parse(event.data) as AppEvent<Message>;
       if (
@@ -925,7 +935,7 @@ export function DashboardClient() {
                       <img
                         alt="WhatsApp QR"
                         className="h-56 w-56 rounded-2xl bg-white p-3"
-                        src={makeQRImageURL(token, tenantHeader, instanceHeader)}
+                        src={makeQRImageURL(tenantHeader, instanceHeader)}
                       />
                     ) : (
                       <p className="text-center text-sm leading-6 text-slate-400">
@@ -1615,7 +1625,6 @@ export function DashboardClient() {
                             <a
                               className="text-xs font-medium text-glow hover:underline"
                               href={makeMediaDownloadURL(
-                                token,
                                 tenantHeader,
                                 instanceHeader,
                                 message.id,

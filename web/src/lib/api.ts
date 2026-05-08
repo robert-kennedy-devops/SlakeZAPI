@@ -439,10 +439,13 @@ export const api = {
     request<void>(`/app/apikeys/${id}`, { method: "DELETE", token, tenantID }),
 };
 
-export function makeWSURL(token: string, tenantID: string, instanceID?: string) {
+// Token is intentionally omitted from these URLs — the browser sends the
+// HttpOnly access-token cookie automatically on WebSocket upgrades and
+// resource loads (<img>, download links), so no credential ends up in
+// server logs, Referer headers, or browser history.
+export function makeWSURL(tenantID: string, instanceID?: string) {
   const apiBase = getAPIBaseURL();
   const url = new URL("/app/ws", apiBase);
-  url.searchParams.set("access_token", token);
   url.searchParams.set("tenant_id", tenantID);
   if (instanceID) url.searchParams.set("instance_id", instanceID);
   if (url.protocol === "http:") url.protocol = "ws:";
@@ -450,22 +453,19 @@ export function makeWSURL(token: string, tenantID: string, instanceID?: string) 
   return url.toString();
 }
 
-export function makeQRImageURL(token: string, tenantID: string, instanceID?: string) {
+export function makeQRImageURL(tenantID: string, instanceID?: string) {
   const url = new URL("/app/whatsapp/qr.png", getAPIBaseURL());
-  url.searchParams.set("access_token", token);
   url.searchParams.set("tenant_id", tenantID);
   if (instanceID) url.searchParams.set("instance_id", instanceID);
   return url.toString();
 }
 
 export function makeMediaDownloadURL(
-  token: string,
   tenantID: string,
   instanceID: string | undefined,
   messageID: string,
 ) {
   const url = new URL(`/app/messages/${messageID}/media`, getAPIBaseURL());
-  url.searchParams.set("access_token", token);
   url.searchParams.set("tenant_id", tenantID);
   if (instanceID) url.searchParams.set("instance_id", instanceID);
   return url.toString();

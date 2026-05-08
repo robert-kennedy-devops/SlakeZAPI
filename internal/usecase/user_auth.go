@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/mail"
 	"time"
 
 	"github.com/google/uuid"
@@ -61,6 +62,9 @@ func NewUserAuthUsecase(
 func (u *UserAuthUsecase) SignUp(ctx context.Context, req domain.SignUpRequest) (*domain.AuthSessionResponse, string, error) {
 	if req.Name == "" || req.Email == "" || req.Password == "" {
 		return nil, "", fmt.Errorf("%w: name, email and password are required", domain.ErrBadRequest)
+	}
+	if _, err := mail.ParseAddress(req.Email); err != nil {
+		return nil, "", fmt.Errorf("%w: invalid email address", domain.ErrBadRequest)
 	}
 	if len(req.Password) < 8 {
 		return nil, "", fmt.Errorf("%w: password must be at least 8 characters", domain.ErrBadRequest)
