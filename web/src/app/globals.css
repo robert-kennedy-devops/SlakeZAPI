@@ -124,4 +124,28 @@ h4 {
   .auth-shell {
     @apply relative overflow-hidden rounded-[32px] border border-white/10 bg-panel/90 shadow-panel backdrop-blur-xl;
   }
+
+  .sidebar {
+    @apply flex h-screen w-56 shrink-0 flex-col border-r border-line bg-panel/95 backdrop-blur-xl;
+  }
+
+  .topbar {
+    @apply flex h-14 shrink-0 items-center gap-3 border-b border-line bg-panel/95 px-5 backdrop-blur-xl;
+  }
+
+  .nav-item {
+    @apply flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium text-slate-400 transition-colors hover:bg-white/5 hover:text-white;
+  }
+
+  .nav-item-active {
+    @apply bg-glow/10 text-glow;
+  }
+
+  .content-area {
+    @apply flex flex-1 flex-col overflow-hidden;
+  }
+
+  .section-header {
+    @apply mb-6 border-b border-line pb-5;
+  }
 }

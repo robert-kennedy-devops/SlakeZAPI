@@ -171,6 +171,11 @@ export const api = {
     request<void>("/app/auth/logout", { method: "POST", token }),
   me: (token: string, tenantID?: string) =>
     request<CurrentUserResponse>("/app/auth/me", { token, tenantID }),
+  updateUserProfile: (
+    token: string,
+    body: { name?: string; email?: string; old_password?: string; new_password?: string },
+  ) =>
+    request<import("@/lib/types").User>("/app/auth/profile", { method: "PATCH", token, body }),
   tenantSummary: (token: string, tenantID: string) =>
     request<TenantSummary>("/app/tenant/summary", { token, tenantID }),
   instances: (token: string, tenantID: string) =>

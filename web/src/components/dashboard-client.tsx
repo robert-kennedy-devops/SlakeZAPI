@@ -71,16 +71,9 @@ import type {
 } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
 import { AutomationModule } from "@/components/dashboard/automation-module";
-import {
-  DashboardHeader,
-  type DashboardExecutiveStat,
-} from "@/components/dashboard/dashboard-header";
+import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { OperationsModule } from "@/components/dashboard/operations-module";
-import {
-  OverviewModule,
-  type DashboardNavLink,
-} from "@/components/dashboard/overview-module";
-import { SettingsModule } from "@/components/dashboard/settings-module";
+import { OverviewModule } from "@/components/dashboard/overview-module";
 import {
   EmptyState,
   FormPanel,
@@ -312,6 +305,14 @@ export function DashboardClient() {
   });
   const [pairPhoneForm, setPairPhoneForm] = useState({ phone: "" });
   const [pairCode, setPairCode] = useState("");
+  const [activeSection, setActiveSection] = useState("overview");
+  const [accountForm, setAccountForm] = useState({
+    name: "",
+    email: "",
+    old_password: "",
+    new_password: "",
+    confirm_password: "",
+  });
 
   useEffect(() => {
     const authToken = getAuthToken();
@@ -920,6 +921,25 @@ export function DashboardClient() {
     onError: handleMutationError,
   });
 
+  const updateAccountProfile = useMutation({
+    mutationFn: () => {
+      const body: { name?: string; email?: string; old_password?: string; new_password?: string } = {};
+      if (accountForm.name.trim()) body.name = accountForm.name.trim();
+      if (accountForm.email.trim()) body.email = accountForm.email.trim();
+      if (accountForm.new_password) {
+        body.old_password = accountForm.old_password;
+        body.new_password = accountForm.new_password;
+      }
+      return api.updateUserProfile(token, body);
+    },
+    onSuccess: () => {
+      notify("Conta atualizada com sucesso.");
+      setAccountForm({ name: "", email: "", old_password: "", new_password: "", confirm_password: "" });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.me });
+    },
+    onError: handleMutationError,
+  });
+
   const updatePrivacy = useMutation({
     mutationFn: () =>
       api.updatePrivacySettings(
@@ -1390,7 +1410,7 @@ export function DashboardClient() {
       (campaign) =>
         campaign.status === "running" || campaign.status === "scheduled",
     ).length ?? 0;
-  const sectionLinks: DashboardNavLink[] = [
+  const sectionLinks = [
     {
       id: "overview",
       label: "Visao Geral",
@@ -1422,29 +1442,6 @@ export function DashboardClient() {
       icon: <Settings className="h-4 w-4" />,
     },
   ];
-  const executiveStats: DashboardExecutiveStat[] = [
-    {
-      label: "Instancias conectadas",
-      value: `${connectedInstances}/${instancesQuery.data?.length ?? 0}`,
-      hint: connectedInstances > 0 ? "operacao ativa" : "aguardando conexao",
-    },
-    {
-      label: "Conversas pendentes",
-      value: String(unreadConversations),
-      hint: unreadConversations > 0 ? "demandam atencao" : "fila sob controle",
-    },
-    {
-      label: "Campanhas em curso",
-      value: String(activeCampaigns),
-      hint: activeCampaigns > 0 ? "execucao em andamento" : "sem agendamentos",
-    },
-    {
-      label: "Webhooks ativos",
-      value: String(webhooksQuery.data?.length ?? 0),
-      hint: "integracoes configuradas",
-    },
-  ];
-
   if (!token || meQuery.isLoading) {
     return <LoadingScreen label="Carregando console" />;
   }
@@ -1466,154 +1463,171 @@ export function DashboardClient() {
   }
 
   return (
-    <main
-      className="relative min-h-screen overflow-hidden px-4 py-6 lg:px-8"
-      data-testid="dashboard-root"
-    >
-      <div className="hero-orb left-[-140px] top-28 h-80 w-80 bg-glow/15" />
-      <div className="hero-orb right-[-120px] top-[30rem] h-72 w-72 bg-neon/10" />
-      <div className="grid-background absolute inset-0 opacity-35" />
-      <div className="relative mx-auto flex max-w-7xl flex-col gap-6">
+    <div className="flex h-screen overflow-hidden" data-testid="dashboard-root">
+      <div className="hero-orb pointer-events-none fixed left-[-140px] top-28 h-80 w-80 bg-glow/10" />
+      <div className="hero-orb pointer-events-none fixed right-[-120px] top-[30rem] h-72 w-72 bg-neon/10" />
+      <div className="grid-background pointer-events-none fixed inset-0 opacity-20" />
+
+      {/* ── Sidebar ──────────────────────────────────────────────────── */}
+      <aside className="sidebar relative z-20">
+        <div className="flex h-14 items-center gap-2 border-b border-line px-4">
+          <RadioTower className="h-5 w-5 shrink-0 text-glow" />
+          <span className="text-sm font-bold text-white">SlakeZAPI</span>
+        </div>
+        <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-3">
+          {sectionLinks.map((link) => (
+            <button
+              key={link.id}
+              className={`nav-item ${activeSection === link.id ? "nav-item-active" : ""}`}
+              onClick={() => setActiveSection(link.id)}
+              type="button"
+            >
+              {link.icon}
+              <span>{link.label}</span>
+            </button>
+          ))}
+        </nav>
+        <div className="border-t border-line px-3 py-3">
+          <div className="flex items-center gap-2 px-3 py-2">
+            <span
+              className={`h-2 w-2 shrink-0 rounded-full ${
+                statusQuery.data?.status === "connected"
+                  ? "bg-emerald-400"
+                  : "bg-slate-600"
+              }`}
+            />
+            <span className="min-w-0 flex-1 truncate text-xs text-slate-400">
+              {statusQuery.data?.phone ||
+                statusQuery.data?.status ||
+                "desconectado"}
+            </span>
+          </div>
+          <button
+            className="nav-item mt-1 text-slate-500 hover:text-red-400"
+            onClick={signOut}
+            type="button"
+          >
+            <LogOut className="h-4 w-4" />
+            <span>Sair</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* ── Main ─────────────────────────────────────────────────────── */}
+      <div className="content-area relative z-10 min-w-0">
         <DashboardHeader
           title={
             summaryQuery.data?.tenant?.name ??
             currentUser?.tenant?.name ??
             "Console"
           }
-          description="Um dashboard comercialmente forte precisa comunicar controle, confianca e clareza. Esta organizacao prioriza saude da operacao, produtividade da equipe e acesso gradual aos recursos avancados."
           operatorName={currentUser?.user.name}
           operatorRole={ROLE_LABELS[currentMembership?.role ?? "viewer"]}
-          badges={[
-            `tenant ${tenantHeader ? tenantHeader.slice(0, 8) : "n/a"}`,
-            `instancia ${instanceHeader ? instanceHeader.slice(0, 8) : "n/a"}`,
-            statusQuery.data?.status ?? "disconnected",
-          ]}
-          executiveStats={executiveStats}
           controls={
-            <div className="rounded-3xl border border-white/10 bg-slate-950/45 p-4">
-              <div className="mb-4 rounded-3xl border border-glow/20 bg-glow/10 p-4">
-                <p className="text-xs uppercase tracking-[0.24em] text-glow">
-                  Proximos passos recomendados
-                </p>
-                <ol className="mt-3 space-y-2 text-sm text-slate-200">
-                  <li>1. Selecione o workspace e a instancia ativa.</li>
-                  <li>2. Conecte o WhatsApp e valide o QR ou codigo.</li>
-                  <li>
-                    3. Envie a primeira mensagem e acompanhe inbox e campanhas.
-                  </li>
-                </ol>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <select
-                  className="input"
-                  value={tenantHeader}
-                  onChange={(event) =>
-                    startTransition(() => {
-                      setTenant(event.target.value);
-                      setSelectedTenantID(event.target.value);
-                    })
-                  }
-                >
-                  {currentUser?.memberships.map((membership) => (
-                    <option key={membership.id} value={membership.tenant_id}>
-                      {membership.tenant_id} • {ROLE_LABELS[membership.role]}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  className="input"
-                  value={instanceHeader}
-                  onChange={(event) =>
-                    setSelectedInstanceID(event.target.value)
-                  }
-                >
-                  {instancesQuery.data?.map((instance) => (
-                    <option key={instance.id} value={instance.id}>
-                      {instance.name} • {instance.phone || instance.status}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="mt-3 flex flex-col gap-3 sm:flex-row">
-                <input
-                  className="input"
-                  placeholder="Nome da nova instancia"
-                  value={instanceName}
-                  onChange={(event) => setInstanceName(event.target.value)}
-                />
-                <button
-                  className="button-secondary sm:min-w-48"
-                  disabled={createInstance.isPending || !instanceName.trim()}
-                  onClick={() => createInstance.mutate()}
-                  type="button"
-                >
-                  <Smartphone className="mr-2 h-4 w-4" />
-                  Criar instancia
-                </button>
-              </div>
-              <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:justify-end">
-                <button
-                  className="button-secondary"
-                  onClick={() =>
-                    invalidateTenant(tenantHeader, instanceHeader, queryClient)
-                  }
-                  type="button"
-                >
-                  <RefreshCcw className="mr-2 h-4 w-4" />
-                  Atualizar
-                </button>
-                <button
-                  className="button-danger"
-                  onClick={signOut}
-                  type="button"
-                >
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Sair
-                </button>
-              </div>
+            <div className="flex items-center gap-2">
+              <select
+                className="input h-8 w-44 text-xs"
+                value={tenantHeader}
+                onChange={(event) =>
+                  startTransition(() => {
+                    setTenant(event.target.value);
+                    setSelectedTenantID(event.target.value);
+                  })
+                }
+              >
+                {currentUser?.memberships.map((membership) => (
+                  <option key={membership.id} value={membership.tenant_id}>
+                    {membership.tenant_id.slice(0, 14)} ·{" "}
+                    {ROLE_LABELS[membership.role]}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="input h-8 w-44 text-xs"
+                value={instanceHeader}
+                onChange={(event) => setSelectedInstanceID(event.target.value)}
+              >
+                {instancesQuery.data?.map((instance) => (
+                  <option key={instance.id} value={instance.id}>
+                    {instance.name} · {instance.phone || instance.status}
+                  </option>
+                ))}
+              </select>
+              <button
+                className="button-secondary flex h-8 items-center gap-1.5 px-3 text-xs"
+                onClick={() =>
+                  invalidateTenant(tenantHeader, instanceHeader, queryClient)
+                }
+                type="button"
+              >
+                <RefreshCcw className="h-3.5 w-3.5" />
+              </button>
             </div>
           }
         />
 
-        {flash ? (
-          <div className="rounded-2xl border border-glow/20 bg-glow/10 px-4 py-3 text-sm text-glow">
-            {flash}
-          </div>
-        ) : null}
+        <main className="flex-1 overflow-y-auto">
+          {flash ? (
+            <div className="mx-5 mt-4 rounded-2xl border border-glow/20 bg-glow/10 px-4 py-3 text-sm text-glow">
+              {flash}
+            </div>
+          ) : null}
 
-        <OverviewModule
-          links={sectionLinks}
-          metrics={
-            <>
-              <MetricCard
-                icon={<Cable className="h-5 w-5" />}
-                label="Sessao WhatsApp"
-                value={statusQuery.data?.status ?? "unknown"}
-                hint={statusQuery.data?.phone || "Sem numero pareado"}
+          <div className="px-5 py-5">
+            {activeSection === "overview" && (
+              <>
+                <div className="mb-5 flex items-center gap-3">
+                  <input
+                    className="input h-9 max-w-[200px] text-xs"
+                    placeholder="Nova instancia"
+                    value={instanceName}
+                    onChange={(event) => setInstanceName(event.target.value)}
+                  />
+                  <button
+                    className="button-secondary h-9 px-3 text-xs"
+                    disabled={createInstance.isPending || !instanceName.trim()}
+                    onClick={() => createInstance.mutate()}
+                    type="button"
+                  >
+                    <Smartphone className="mr-1.5 h-3.5 w-3.5" />
+                    Criar instancia
+                  </button>
+                </div>
+              <OverviewModule
+                metrics={
+                  <>
+                    <MetricCard
+                      icon={<Cable className="h-5 w-5" />}
+                      label="Sessao WhatsApp"
+                      value={statusQuery.data?.status ?? "unknown"}
+                      hint={statusQuery.data?.phone || "Sem numero pareado"}
+                    />
+                    <MetricCard
+                      icon={<Activity className="h-5 w-5" />}
+                      label="Uso do mes"
+                      value={`${usage?.sent ?? 0} enviadas`}
+                      hint={`${usage?.received ?? 0} recebidas`}
+                    />
+                    <MetricCard
+                      icon={<ShieldCheck className="h-5 w-5" />}
+                      label="Plano"
+                      value={planMetricValue}
+                      hint={planMetricHint}
+                    />
+                    <MetricCard
+                      icon={<MessageSquareShare className="h-5 w-5" />}
+                      label="Mensagens"
+                      value={`${messagesQuery.data?.length ?? 0} no feed`}
+                      hint={isPending ? "trocando tenant..." : "realtime ativo"}
+                    />
+                  </>
+                }
               />
-              <MetricCard
-                icon={<Activity className="h-5 w-5" />}
-                label="Uso do mes"
-                value={`${usage?.sent ?? 0} enviadas`}
-                hint={`${usage?.received ?? 0} recebidas`}
-              />
-              <MetricCard
-                icon={<ShieldCheck className="h-5 w-5" />}
-                label="Plano"
-                value={planMetricValue}
-                hint={planMetricHint}
-              />
-              <MetricCard
-                icon={<MessageSquareShare className="h-5 w-5" />}
-                label="Mensagens"
-                value={`${messagesQuery.data?.length ?? 0} no feed`}
-                hint={isPending ? "trocando tenant..." : "realtime ativo"}
-              />
-            </>
-          }
-        />
+              </>
+            )}
 
-        <OperationsModule
+            {activeSection === "operations" && (
+              <OperationsModule
           primary={
             <>
               <div className="panel p-6">
@@ -3128,9 +3142,11 @@ export function DashboardClient() {
             </>
           }
         />
+            )}
 
-        {/* ── Novos tipos de mensagem ───────────────────────────────────── */}
-        <AutomationModule
+            {/* ── Novos tipos de mensagem ─────────────────────────────── */}
+            {activeSection === "advanced" && (
+              <AutomationModule
           advancedMessaging={
             <>
               <div className="panel p-6">
@@ -3681,185 +3697,244 @@ export function DashboardClient() {
             </>
           }
         />
+            )}
 
-        {/* ── Perfil, Privacidade e Contatos ───────────────────────────── */}
-        <SettingsModule
-          billingManagement={
-            <>
-              <div className="grid gap-6">
-                <div className="panel p-6">
-                  <p className="section-kicker">Planos e faturamento</p>
-                  <h2 className="mt-2 text-xl font-semibold text-white">
-                    Ativacao, upgrade e gestao comercial
-                  </h2>
-                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
-                    O cliente pode comecar pela degustacao gratuita de 2 dias e,
-                    quando fizer sentido, ativar um plano pago sem depender de
-                    suporte manual.
-                  </p>
-                </div>
+            {/* ── Billing ──────────────────────────────────────────────── */}
+            {activeSection === "billing" && (
+              <div className="grid gap-6" id="billing">
+                <FormPanel
+                  title="Assinatura atual"
+                  icon={<Cable className="h-4 w-4" />}
+                  action={
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        className="button-secondary"
+                        disabled={
+                          openBillingPortal.isPending ||
+                          !currentSubscription?.provider_customer_id
+                        }
+                        onClick={() => openBillingPortal.mutate()}
+                        type="button"
+                      >
+                        Portal de cobranca
+                      </button>
+                      <button
+                        className="button-danger"
+                        disabled={
+                          cancelBillingSubscription.isPending ||
+                          !currentSubscription?.provider_subscription_id
+                        }
+                        onClick={() => cancelBillingSubscription.mutate()}
+                        type="button"
+                      >
+                        Cancelar no fim do ciclo
+                      </button>
+                    </div>
+                  }
+                >
+                  <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-4">
+                    <div>
+                      <dt className="text-xs uppercase tracking-wider text-slate-500">Status</dt>
+                      <dd className="mt-1 font-medium text-white">{formatSubscriptionStatus(currentSubscription?.status)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs uppercase tracking-wider text-slate-500">Plano</dt>
+                      <dd className="mt-1 font-medium text-white">{selectedPlanOption?.name ?? currentSubscription?.plan_id ?? "-"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs uppercase tracking-wider text-slate-500">Provider</dt>
+                      <dd className="mt-1 font-medium text-white">{currentSubscription?.provider || "trial local"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs uppercase tracking-wider text-slate-500">Validade</dt>
+                      <dd className="mt-1 font-medium text-white">
+                        {formatDate(
+                          currentSubscription?.trial_ends_at ??
+                            currentSubscription?.period_end,
+                        )}
+                      </dd>
+                    </div>
+                  </dl>
+                  {isTrialSubscription ? (
+                    <div className="mt-4 rounded-2xl border border-glow/20 bg-glow/10 px-4 py-3 text-sm text-glow">
+                      Trial ativo — todos os recursos liberados por 2 dias.
+                    </div>
+                  ) : null}
+                  {currentSubscription?.cancel_at_period_end ? (
+                    <div className="mt-4 rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
+                      Cancelamento agendado para o fim do periodo atual.
+                    </div>
+                  ) : null}
+                </FormPanel>
 
-                <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
-                  <FormPanel
-                    title="Resumo da assinatura"
-                    icon={<Cable className="h-4 w-4" />}
-                    action={
-                      <div className="flex flex-wrap gap-3">
-                        <button
-                          className="button-secondary"
-                          disabled={
-                            openBillingPortal.isPending ||
-                            !currentSubscription?.provider_customer_id
-                          }
-                          onClick={() => openBillingPortal.mutate()}
-                          type="button"
-                        >
-                          Portal de cobranca
-                        </button>
-                        <button
-                          className="button-danger"
-                          disabled={
-                            cancelBillingSubscription.isPending ||
-                            !currentSubscription?.provider_subscription_id
-                          }
-                          onClick={() => cancelBillingSubscription.mutate()}
-                          type="button"
-                        >
-                          Cancelar no fim do ciclo
-                        </button>
-                      </div>
-                    }
-                  >
-                    <dl className="space-y-3 text-sm text-slate-300">
-                      <div className="flex justify-between gap-4">
-                        <dt>Status</dt>
-                        <dd>{formatSubscriptionStatus(currentSubscription?.status)}</dd>
-                      </div>
-                      <div className="flex justify-between gap-4">
-                        <dt>Plano base</dt>
-                        <dd>{selectedPlanOption?.name ?? currentSubscription?.plan_id ?? "-"}</dd>
-                      </div>
-                      <div className="flex justify-between gap-4">
-                        <dt>Provider</dt>
-                        <dd>{currentSubscription?.provider || "trial local"}</dd>
-                      </div>
-                      <div className="flex justify-between gap-4">
-                        <dt>Validade</dt>
-                        <dd>
-                          {formatDate(
-                            currentSubscription?.trial_ends_at ??
-                              currentSubscription?.period_end,
-                          )}
-                        </dd>
-                      </div>
-                    </dl>
-                    {isTrialSubscription ? (
-                      <div className="rounded-2xl border border-glow/20 bg-glow/10 px-4 py-3 text-sm text-glow">
-                        Trial degustacao ativo com todos os recursos liberados
-                        por 2 dias.
-                      </div>
-                    ) : null}
-                    {currentSubscription?.cancel_at_period_end ? (
-                      <div className="rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
-                        Cancelamento agendado para o fim do periodo atual.
-                      </div>
-                    ) : null}
-                  </FormPanel>
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                  {PLAN_OPTIONS.map((plan) => {
+                    const isCurrentPlan =
+                      currentSubscription?.plan?.name === plan.value ||
+                      currentSubscription?.plan_id === `plan_${plan.value}`;
+                    const isTrialCard = plan.value === "trial";
+                    const disabled =
+                      isTrialCard ||
+                      createBillingCheckout.isPending ||
+                      changeBillingPlan.isPending ||
+                      (isCurrentPlan && currentSubscription?.status === "active");
 
-                  <div className="grid gap-4 md:grid-cols-2">
-                    {PLAN_OPTIONS.map((plan) => {
-                      const isCurrentPlan =
-                        currentSubscription?.plan?.name === plan.value ||
-                        currentSubscription?.plan_id === `plan_${plan.value}`;
-                      const isTrialCard = plan.value === "trial";
-                      const disabled =
-                        isTrialCard ||
-                        createBillingCheckout.isPending ||
-                        changeBillingPlan.isPending ||
-                        (isCurrentPlan && currentSubscription?.status === "active");
-
-                      return (
-                        <div
-                          key={plan.value}
-                          className={`panel p-5 ${
-                            isCurrentPlan ? "border-glow/40 shadow-[0_0_0_1px_rgba(87,224,194,0.18)]" : ""
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-4">
-                            <div>
-                              <p className="text-base font-semibold text-white">
-                                {plan.name}
-                              </p>
-                              <p className="mt-1 text-sm text-slate-300">
-                                {plan.price}
-                              </p>
-                            </div>
-                            <span className="badge">{plan.badge ?? plan.code}</span>
+                    return (
+                      <div
+                        key={plan.value}
+                        className={`panel flex flex-col p-5 ${
+                          isCurrentPlan ? "border-glow/40 shadow-[0_0_0_1px_rgba(87,224,194,0.18)]" : ""
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-base font-semibold text-white">{plan.name}</p>
+                            <p className="mt-0.5 text-sm font-medium text-glow">{plan.price}</p>
                           </div>
-                          <p className="mt-4 text-sm leading-6 text-slate-400">
-                            {plan.summary}
-                          </p>
-                          <p className="mt-3 text-xs uppercase tracking-[0.18em] text-slate-500">
-                            {plan.details}
-                          </p>
-                          <p className="mt-3 text-sm text-slate-300">
-                            Ideal para: {plan.idealFor}
-                          </p>
-                          <div className="mt-4 space-y-2 text-sm text-slate-300">
-                            {plan.highlights.map((highlight) => (
-                              <p key={highlight}>{highlight}</p>
-                            ))}
-                          </div>
-                          <div className="mt-5">
-                            {isTrialCard ? (
-                              <button
-                                className="button-secondary w-full"
-                                disabled
-                                type="button"
-                              >
-                                Degustacao disponivel no onboarding
-                              </button>
-                            ) : (
-                              <button
-                                className="button-primary w-full"
-                                disabled={disabled}
-                                onClick={() => changeBillingPlan.mutate(plan.value)}
-                                type="button"
-                              >
-                                {isCurrentPlan && currentSubscription?.status === "active"
-                                  ? "Plano atual"
-                                  : isTrialSubscription
-                                    ? `Ativar ${plan.name}`
-                                    : `Migrar para ${plan.name}`}
-                              </button>
-                            )}
-                          </div>
+                          <span className="badge shrink-0">{plan.badge ?? plan.code}</span>
                         </div>
-                      );
-                    })}
-                  </div>
+                        <div className="mt-4 flex-1 space-y-1.5">
+                          {plan.highlights.map((highlight) => (
+                            <p key={highlight} className="text-sm text-slate-400">{highlight}</p>
+                          ))}
+                        </div>
+                        <div className="mt-5">
+                          {isTrialCard ? (
+                            <button className="button-secondary w-full" disabled type="button">
+                              Disponivel no onboarding
+                            </button>
+                          ) : (
+                            <button
+                              className="button-primary w-full"
+                              disabled={disabled}
+                              onClick={() => changeBillingPlan.mutate(plan.value)}
+                              type="button"
+                            >
+                              {isCurrentPlan && currentSubscription?.status === "active"
+                                ? "Plano atual"
+                                : isTrialSubscription
+                                  ? `Ativar ${plan.name}`
+                                  : `Migrar para ${plan.name}`}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
-            </>
-          }
-          accountSecurity={
-            <>
-              <div className="grid gap-6">
-                <div className="panel p-6">
-                  <p className="section-kicker">Conta e confianca</p>
-                  <h2 className="mt-2 text-xl font-semibold text-white">
-                    Configuracoes da conta WhatsApp
-                  </h2>
-                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
-                    Organizamos perfil, privacidade e bloqueios em uma camada
-                    separada para reforcar governanca sem poluir o fluxo
-                    operacional.
-                  </p>
+            )}
+
+            {/* ── Identity ─────────────────────────────────────────────── */}
+            {activeSection === "identity" && (
+              <div className="grid gap-6" id="identity">
+                <div className="grid gap-6 lg:grid-cols-2">
+                  {/* Account data */}
+                  <FormPanel
+                    title="Dados da conta"
+                    icon={<Settings className="h-4 w-4" />}
+                    action={
+                      <button
+                        className="button-primary"
+                        disabled={
+                          updateAccountProfile.isPending ||
+                          (!accountForm.name.trim() && !accountForm.email.trim() && !accountForm.new_password)
+                        }
+                        onClick={() => updateAccountProfile.mutate()}
+                        type="button"
+                      >
+                        Salvar alteracoes
+                      </button>
+                    }
+                  >
+                    <div className="space-y-3">
+                      <div>
+                        <label className="mb-1 block text-xs uppercase tracking-wider text-slate-500">
+                          Nome ({currentUser?.user.name || "atual"})
+                        </label>
+                        <input
+                          className="input"
+                          placeholder="Novo nome"
+                          value={accountForm.name}
+                          onChange={(e) => setAccountForm((f) => ({ ...f, name: e.target.value }))}
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs uppercase tracking-wider text-slate-500">
+                          E-mail ({currentUser?.user.email || "atual"})
+                        </label>
+                        <input
+                          className="input"
+                          type="email"
+                          placeholder="Novo e-mail"
+                          value={accountForm.email}
+                          onChange={(e) => setAccountForm((f) => ({ ...f, email: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+                  </FormPanel>
+
+                  {/* Password change */}
+                  <FormPanel
+                    title="Alterar senha"
+                    icon={<ShieldCheck className="h-4 w-4" />}
+                    action={
+                      <button
+                        className="button-primary"
+                        disabled={
+                          updateAccountProfile.isPending ||
+                          !accountForm.old_password ||
+                          !accountForm.new_password ||
+                          accountForm.new_password !== accountForm.confirm_password
+                        }
+                        onClick={() => updateAccountProfile.mutate()}
+                        type="button"
+                      >
+                        Alterar senha
+                      </button>
+                    }
+                  >
+                    <div className="space-y-3">
+                      <div>
+                        <label className="mb-1 block text-xs uppercase tracking-wider text-slate-500">Senha atual</label>
+                        <input
+                          className="input"
+                          type="password"
+                          placeholder="Senha atual"
+                          value={accountForm.old_password}
+                          onChange={(e) => setAccountForm((f) => ({ ...f, old_password: e.target.value }))}
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs uppercase tracking-wider text-slate-500">Nova senha</label>
+                        <input
+                          className="input"
+                          type="password"
+                          placeholder="Min. 8 caracteres"
+                          value={accountForm.new_password}
+                          onChange={(e) => setAccountForm((f) => ({ ...f, new_password: e.target.value }))}
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs uppercase tracking-wider text-slate-500">Confirmar nova senha</label>
+                        <input
+                          className={`input ${accountForm.confirm_password && accountForm.confirm_password !== accountForm.new_password ? "border-danger/50" : ""}`}
+                          type="password"
+                          placeholder="Repita a nova senha"
+                          value={accountForm.confirm_password}
+                          onChange={(e) => setAccountForm((f) => ({ ...f, confirm_password: e.target.value }))}
+                        />
+                        {accountForm.confirm_password && accountForm.confirm_password !== accountForm.new_password ? (
+                          <p className="mt-1 text-xs text-danger">As senhas nao coincidem</p>
+                        ) : null}
+                      </div>
+                    </div>
+                  </FormPanel>
                 </div>
 
                 <div className="grid gap-6 lg:grid-cols-2">
                   <FormPanel
-                    title="Perfil Atual"
+                    title="Perfil WhatsApp"
                     icon={<Smartphone className="h-4 w-4" />}
                     action={null}
                   >
@@ -3890,8 +3965,8 @@ export function DashboardClient() {
                   </FormPanel>
 
                   <FormPanel
-                    title="Atualizar Descricao"
-                    icon={<Settings className="h-4 w-4" />}
+                    title="Descricao WhatsApp"
+                    icon={<Edit2 className="h-4 w-4" />}
                     action={
                       <button
                         className="button-primary"
@@ -3989,7 +4064,6 @@ export function DashboardClient() {
                     </div>
                   )}
                 </FormPanel>
-              </div>
 
               {/* ── Bloquear / Desbloquear Contatos ─────────────────────────── */}
               <div className="grid gap-6">
@@ -4036,22 +4110,13 @@ export function DashboardClient() {
                   </p>
                 </FormPanel>
               </div>
-            </>
-          }
-          workspaceTools={
-            <>
-              <div className="grid gap-6">
-                <div className="panel p-6">
-                  <p className="section-kicker">Ferramentas de produtividade</p>
-                  <h2 className="mt-2 text-xl font-semibold text-white">
-                    Arquivar, silenciar, fixar, editar e encaminhar
-                  </h2>
-                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
-                    Ajustes taticos e manutencao de chat ficam aqui, separados
-                    das etapas que mais ajudam a vender o produto no primeiro
-                    contato.
-                  </p>
-                </div>
+              </div>
+            )}
+
+            {/* ── Tools ────────────────────────────────────────────────── */}
+            {activeSection === "tools" && (
+              <div className="grid gap-6" id="tools">
+                <div className="grid gap-6">
 
                 {/* Chat Actions */}
                 <FormPanel
@@ -4323,11 +4388,12 @@ export function DashboardClient() {
                   </button>
                 </FormPanel>
               </div>
-            </>
-          }
-        />
+              </div>
+            )}
+          </div>
+        </main>
       </div>
-    </main>
+    </div>
   );
 }
 

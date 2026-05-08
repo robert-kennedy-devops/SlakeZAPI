@@ -12,7 +12,7 @@ require (
 	google.golang.org/protobuf v1.36.11
 )
 
-require github.com/stripe/stripe-go/v84 v84.3.0 // indirect
+require github.com/stripe/stripe-go/v84 v84.3.0
 
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect

@@ -104,6 +104,7 @@ func NewRouter(
 	mux.Handle("POST /app/auth/refresh", authIPLimit(http.HandlerFunc(userAuthH.Refresh)))
 	mux.Handle("POST /app/auth/logout", withUserAuth(userAuthH.Logout))
 	mux.Handle("GET /app/auth/me", withUserAuth(userAuthH.Me))
+	mux.Handle("PATCH /app/auth/profile", withUserAuth(userAuthH.UpdateProfile))
 	mux.Handle("GET /app/tenant/summary", withUserRole(authH.Me, domain.UserRoleOwner, domain.UserRoleAdmin, domain.UserRoleOperator, domain.UserRoleViewer))
 	mux.Handle("GET /app/instances", withUserRole(instanceH.List, domain.UserRoleOwner, domain.UserRoleAdmin, domain.UserRoleOperator, domain.UserRoleViewer))
 	mux.Handle("POST /app/instances", withUserRole(instanceH.Create, domain.UserRoleOwner, domain.UserRoleAdmin))

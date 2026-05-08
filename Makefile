@@ -24,13 +24,13 @@ lint:
 
 # ── Docker ──────────────────────────────────────────────────
 docker-up:
-	docker compose -f docker/docker-compose.yml up --build
+	docker compose --env-file .env -f docker/docker-compose.yml up --build
 
 docker-down:
-	docker compose -f docker/docker-compose.yml down -v
+	docker compose --env-file .env -f docker/docker-compose.yml down -v
 
 docker-db:
-	docker compose -f docker/docker-compose.yml up postgres -d
+	docker compose --env-file .env -f docker/docker-compose.yml up postgres -d
 
 # ── Database ────────────────────────────────────────────────
 migrate:
@@ -42,9 +42,11 @@ seed:
 	  INSERT INTO tenants (id, name, email, active) \
 	  VALUES ('tenant_test', 'Tenant Teste', 'teste@saas.com', true) \
 	  ON CONFLICT DO NOTHING; \
-	  INSERT INTO subscriptions (id, tenant_id, plan_id, status, period_end) \
-	  VALUES ('sub_test', 'tenant_test', 'plan_growth', 'active', NOW() + INTERVAL '30 days') \
-	  ON CONFLICT DO NOTHING;"
+	  INSERT INTO subscriptions (id, tenant_id, plan_id, status, period_end, updated_at) \
+	  VALUES ('sub_test', 'tenant_test', 'plan_growth', 'active', NOW() + INTERVAL '30 days', NOW()) \
+	  ON CONFLICT (tenant_id) DO UPDATE \
+	    SET plan_id='plan_growth', status='active', \
+	        period_end=NOW() + INTERVAL '30 days', updated_at=NOW();"
 
 help:
 	@echo ""

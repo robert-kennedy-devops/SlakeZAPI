@@ -98,6 +98,28 @@ func (h *UserAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	httputil.JSON(w, http.StatusOK, resp)
 }
 
+func (h *UserAuthHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFromCtx(r.Context())
+	if userID == "" {
+		httputil.Error(w, http.StatusUnauthorized, "missing user context")
+		return
+	}
+	var req domain.UpdateUserProfileRequest
+	if err := httputil.Decode(r, &req); err != nil {
+		httputil.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	user, err := h.userAuthUC.UpdateUserProfile(r.Context(), userID, req)
+	if err != nil {
+		httputil.DomainError(w, err)
+		return
+	}
+	h.log.WithContext(r.Context()).Audit("app.auth.update_profile", map[string]interface{}{
+		"user_id": userID,
+	})
+	httputil.JSON(w, http.StatusOK, user)
+}
+
 func (h *UserAuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromCtx(r.Context())
 	tenantID := middleware.TenantFromCtx(r.Context())

@@ -1,11 +1,12 @@
-# 🟢 WhatsApp SaaS API — Go
+# 🟢 SlakeZAPI — WhatsApp SaaS Platform
 
-Plataforma SaaS para envio e recebimento de mensagens WhatsApp, construída em **Go** com **Clean Architecture**, integração real via **WhatsMeow**, suporte a múltiplos tenants e um frontend moderno em **Next.js** para operação do cliente final.
+Plataforma SaaS para envio e recebimento de mensagens WhatsApp, construída em **Go** com **Clean Architecture**, integração real via **WhatsMeow**, suporte a múltiplos tenants e um dashboard profissional em **Next.js** para operação do cliente final.
 
-Estado atual do projeto:
+Funcionalidades disponíveis:
 
 - multi-instância por tenant
-- dashboard web com autenticação própria
+- dashboard SaaS com sidebar de navegação e autenticação própria
+- gerenciamento de conta: edição de nome, e-mail e senha diretamente no painel
 - campanhas imediatas e agendadas
 - inbox operacional por conversa
 - envio de texto, mídia, grupos, status e mensagens interativas
@@ -14,6 +15,7 @@ Estado atual do projeto:
 - **operações de chat** (arquivar, silenciar, fixar, marcar como lido/não lido)
 - **perfil e privacidade** (foto, descrição, visto por último, recibos, bloquear contatos)
 - **pareamento por código de telefone** (sem QR) e reinício de instância
+- billing autosserviço via Stripe (checkout, upgrade/downgrade, portal de cobrança, cancelamento)
 - webhooks, WebSocket, fila observável e docs OpenAPI/Postman
 
 ---
@@ -93,7 +95,7 @@ whatsapp-saas/
 
 ### Pré-requisitos
 
-- Go 1.25+
+- Go 1.25.0+
 - Docker & Docker Compose
 
 ### 1. Clonar e configurar
@@ -109,7 +111,7 @@ cp .env.example .env
 ### 2. Subir com Docker Compose
 
 ```bash
-make docker-up
+docker compose --env-file .env -f docker/docker-compose.yml up --build -d
 ```
 
 Endpoints locais:
@@ -117,11 +119,7 @@ Endpoints locais:
 - Frontend: `http://localhost:3000`
 - API: `http://localhost:8080`
 
-Se a porta `5432` já estiver ocupada na máquina:
-
-```bash
-POSTGRES_PORT=5433 docker compose -f docker/docker-compose.yml up --build -d
-```
+> O flag `--env-file .env` é necessário porque a pasta de contexto do Compose é `docker/` — sem ele as variáveis do `.env` na raiz não chegam aos containers.
 
 ### 3. Rodar localmente (sem Docker)
 
@@ -144,6 +142,7 @@ O painel web usa login de usuário em `/app/auth/*`, seleção de tenant por hea
 - signup: `POST /app/auth/signup`
 - refresh: `POST /app/auth/refresh`
 - perfil/sessão: `GET /app/auth/me`
+- atualizar conta: `PATCH /app/auth/profile`
 - dashboard summary: `GET /app/tenant/summary`
 - mensagens, inbox, fila, grupos, campanhas, webhooks, credenciais e sessão WhatsApp via `/app/*`
 - para frontend e API em subdomínios diferentes, use cookie `SameSite=None` + `Secure`
@@ -242,6 +241,7 @@ Arquivos servidos pela própria API:
 | `POST` | `/app/auth/login` | Autenticar usuário do dashboard |
 | `POST` | `/app/auth/refresh` | Renovar access token usando refresh cookie |
 | `GET` | `/app/auth/me` | Consultar usuário atual e memberships |
+| `PATCH` | `/app/auth/profile` | Atualizar nome, e-mail ou senha do usuário autenticado |
 | `GET` | `/app/tenant/summary` | Resumo do tenant selecionado |
 | `GET` | `/app/messages` | Listar mensagens usando sessão de usuário |
 | `POST` | `/app/messages/send` | Enviar mensagem usando sessão de usuário |
@@ -707,24 +707,30 @@ O frontend fica em `web/` e foi construído com:
 - `Tailwind CSS`
 - `TanStack Query`
 - autenticação por sessão de usuário
-- QR code, mensagens, inbox operacional, grupos, status, campanhas, webhooks, fila, API keys e uso mensal no mesmo dashboard
-- envio avançado: localização, cartão de contato, sticker, resposta citada, reação, edição, encaminhamento e estrela
-- gestão completa de grupos: criar, participantes, info, link de convite, sair
-- operações de chat: arquivar, silenciar (com duração), fixar, marcar lido/não lido
-- perfil e privacidade: ver dados da conta, atualizar descrição, configurar visibilidade e recibos, bloquear contatos
-- pareamento por código de telefone (sem precisar escanear QR) e reinício de instância
 
-Organização atual do dashboard:
+**Layout do dashboard:**
 
-- `dashboard-client.tsx` atua como container principal de estado, queries e mutations
-- `src/components/dashboard/dashboard-header.tsx` concentra o topo executivo do workspace
-- `src/components/dashboard/overview-module.tsx` exibe navegação e KPIs iniciais
-- `src/components/dashboard/operations-module.tsx` agrupa conexão, inbox, campanhas e operação diária
-- `src/components/dashboard/automation-module.tsx` separa recursos avançados e gestão de grupos
-- `src/components/dashboard/settings-module.tsx` organiza conta, privacidade e ferramentas de manutenção
-- `src/components/dashboard/shared.tsx` reúne componentes reutilizáveis como cards, painéis e estados vazios
+O dashboard usa uma sidebar fixa com navegação por seção, topbar compacto de 56px e área de conteúdo independente por scroll — padrão SaaS profissional.
 
-Essa divisão mantém a lógica atual intacta, mas deixa a interface preparada para futuras evoluções por domínio sem voltar ao arquivo monolítico anterior.
+Seções disponíveis na sidebar:
+
+| Seção | Conteúdo |
+|-------|----------|
+| Visão Geral | KPIs: sessão WhatsApp, uso do mês, plano e mensagens no feed |
+| Operação | Conexão/QR, inbox por conversa, campanhas, status e fila |
+| Recursos Avançados | Mensagens especiais, grupos, bulk, interativas e automação |
+| Planos e Billing | Assinatura atual, cards de plano (4 colunas), upgrade/downgrade/cancelamento |
+| Conta e Privacidade | Editar nome/e-mail, alterar senha, perfil WhatsApp, privacidade, bloquear contatos |
+| Ferramentas de Chat | Arquivar, silenciar, fixar, editar, encaminhar, estrelar, pareamento por código |
+
+**Organização dos arquivos:**
+
+- `dashboard-client.tsx` — container principal de estado, queries e mutations
+- `dashboard/dashboard-header.tsx` — topbar executivo do workspace
+- `dashboard/overview-module.tsx` — grade de KPIs iniciais
+- `dashboard/operations-module.tsx` — conexão, inbox, campanhas e operação diária
+- `dashboard/automation-module.tsx` — recursos avançados e gestão de grupos
+- `dashboard/shared.tsx` — componentes reutilizáveis (cards, painéis, estados vazios)
 
 Fluxo principal:
 

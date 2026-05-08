@@ -59,6 +59,40 @@ func NewUserAuthUsecase(
 	}
 }
 
+func (u *UserAuthUsecase) UpdateUserProfile(ctx context.Context, userID string, req domain.UpdateUserProfileRequest) (*domain.User, error) {
+	user, err := u.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if req.Name != "" {
+		user.Name = req.Name
+	}
+	if req.Email != "" {
+		if _, err := mail.ParseAddress(req.Email); err != nil {
+			return nil, fmt.Errorf("%w: invalid email address", domain.ErrBadRequest)
+		}
+		user.Email = req.Email
+	}
+	if req.NewPassword != "" {
+		if len(req.NewPassword) < 8 {
+			return nil, fmt.Errorf("%w: new password must be at least 8 characters", domain.ErrBadRequest)
+		}
+		if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.OldPassword)); err != nil {
+			return nil, fmt.Errorf("%w: current password is incorrect", domain.ErrUnauthorized)
+		}
+		hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+		if err != nil {
+			return nil, fmt.Errorf("hash password: %w", err)
+		}
+		user.PasswordHash = string(hash)
+	}
+	user.UpdatedAt = time.Now().UTC()
+	if err := u.userRepo.Update(ctx, user); err != nil {
+		return nil, err
+	}
+	return user, nil
+}
+
 func (u *UserAuthUsecase) SignUp(ctx context.Context, req domain.SignUpRequest) (*domain.AuthSessionResponse, string, error) {
 	if req.Name == "" || req.Email == "" || req.Password == "" {
 		return nil, "", fmt.Errorf("%w: name, email and password are required", domain.ErrBadRequest)

@@ -697,6 +697,13 @@ type LoginRequest struct {
 	Password string `json:"password"`
 }
 
+type UpdateUserProfileRequest struct {
+	Name        string `json:"name"`
+	Email       string `json:"email"`
+	OldPassword string `json:"old_password"`
+	NewPassword string `json:"new_password"`
+}
+
 type AuthSessionResponse struct {
 	Token            string      `json:"token"`
 	ExpiresAt        time.Time   `json:"expires_at"`
