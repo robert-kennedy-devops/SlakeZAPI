@@ -22,6 +22,7 @@
 .idea/
 .vscode/
 .claude/
+.hintrc
 *.swp
 *.swo
 
